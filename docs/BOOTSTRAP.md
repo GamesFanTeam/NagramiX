@@ -24,6 +24,8 @@ compiled or linked into NagramiX.
 6. Remove residual signatures/profiles, rewrite the main app and extension bundle
    identifiers to `com.gamesfanteam.nagramix`, verify no upstream identifier
    remains, and package `Payload/NagramiX.app` as `NagramiX.ipa`.
+   Telegram's `--outputBuildArtifactsPath` option provides the deterministic
+   intermediate IPA path rather than relying on Bazel symlink traversal.
 7. Sign/install with SideStore and validate launch plus Telegram authorization.
 8. Only after the checkpoint passes, inventory NagramX 1258 features and port
    them in isolated iOS modules by coherent feature groups.

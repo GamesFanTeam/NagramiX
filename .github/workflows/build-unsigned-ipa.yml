@@ -69,6 +69,12 @@ jobs:
             --source Telegram-iOS \
             --configuration "$RUNNER_TEMP/nagramix-configuration.json"
 
+      - name: Restore Bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BAZEL_CACHE }}
+          key: telegram-ios-${{ runner.os }}-${{ runner.arch }}-${{ env.TELEGRAM_IOS_REF }}
+
       - name: Build arm64 device application with fake signing
         working-directory: Telegram-iOS
         shell: bash
@@ -81,13 +87,14 @@ jobs:
             --configurationPath="$RUNNER_TEMP/nagramix-configuration.json" \
             --codesigningInformationPath=build-system/fake-codesigning \
             --buildNumber="${GITHUB_RUN_NUMBER}" \
-            --configuration=release_arm64
+            --configuration=release_arm64 \
+            --outputBuildArtifactsPath="$RUNNER_TEMP/build-artifacts"
 
       - name: Locate and package unsigned application
         shell: bash
         run: |
-          source_ipa="$(find Telegram-iOS/bazel-out -path '*/bin/Telegram/Telegram.ipa' -print -quit)"
-          test -n "$source_ipa" || { echo "Built Telegram.ipa was not found"; exit 1; }
+          source_ipa="$RUNNER_TEMP/build-artifacts/Telegram.ipa"
+          test -f "$source_ipa" || { echo "Built Telegram.ipa was not found at $source_ipa"; exit 1; }
           rm -rf "$RUNNER_TEMP/nagramix-unpack"
           mkdir -p "$RUNNER_TEMP/nagramix-unpack"
           unzip -q "$source_ipa" -d "$RUNNER_TEMP/nagramix-unpack"
