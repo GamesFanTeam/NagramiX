@@ -76,17 +76,16 @@ jobs:
           path: ${{ env.BAZEL_CACHE }}
           key: telegram-ios-${{ runner.os }}-${{ runner.arch }}-${{ env.TELEGRAM_IOS_REF }}
 
-      - name: Build arm64 device application with fake signing
+      - name: Build native NagramiX arm64 application without profiles
         working-directory: Telegram-iOS
         shell: bash
         run: |
-          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
           python3 build-system/Make/Make.py \
             --cacheDir="$BAZEL_CACHE" \
             --overrideXcodeVersion \
+            --xcodeManagedCodesigning \
             build \
             --configurationPath="$RUNNER_TEMP/nagramix-configuration.json" \
-            --codesigningInformationPath=build-system/fake-codesigning \
             --buildNumber="${GITHUB_RUN_NUMBER}" \
             --configuration=release_arm64 \
             --outputBuildArtifactsPath="$RUNNER_TEMP/build-artifacts"
