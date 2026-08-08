@@ -70,7 +70,8 @@ jobs:
             --configuration "$RUNNER_TEMP/nagramix-configuration.json"
 
       - name: Restore Bazel cache
-        uses: actions/cache@v4
+        id: bazel-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.BAZEL_CACHE }}
           key: telegram-ios-${{ runner.os }}-${{ runner.arch }}-${{ env.TELEGRAM_IOS_REF }}
@@ -89,6 +90,13 @@ jobs:
             --buildNumber="${GITHUB_RUN_NUMBER}" \
             --configuration=release_arm64 \
             --outputBuildArtifactsPath="$RUNNER_TEMP/build-artifacts"
+
+      - name: Save Bazel cache
+        if: steps.bazel-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.BAZEL_CACHE }}
+          key: telegram-ios-${{ runner.os }}-${{ runner.arch }}-${{ env.TELEGRAM_IOS_REF }}
 
       - name: Locate and package unsigned application
         shell: bash

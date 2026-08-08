@@ -26,6 +26,8 @@ compiled or linked into NagramiX.
    remains, and package `Payload/NagramiX.app` as `NagramiX.ipa`.
    Telegram's `--outputBuildArtifactsPath` option provides the deterministic
    intermediate IPA path rather than relying on Bazel symlink traversal.
+   A recursive plist rewrite covers identifiers embedded in extension metadata,
+   URL declarations, app groups, and companion relationships.
 7. Sign/install with SideStore and validate launch plus Telegram authorization.
 8. Only after the checkpoint passes, inventory NagramX 1258 features and port
    them in isolated iOS modules by coherent feature groups.
