@@ -18,10 +18,12 @@ compiled or linked into NagramiX.
    in CI and verify version 12.9.2.
 3. Generate build configuration from repository secrets; never commit API hashes,
    profiles, certificates, private keys, or Apple account data.
-4. Apply deterministic branding and bundle configuration.
+4. Apply deterministic branding. Use Telegram's official identifier only as a
+   temporary build input because its fake profiles are bound to that identifier.
 5. Build `release_arm64` with Telegram's fake-code-signing fixtures.
-6. remove residual signatures/profiles and package `Payload/NagramiX.app` as
-   `NagramiX.ipa`.
+6. Remove residual signatures/profiles, rewrite the main app and extension bundle
+   identifiers to `com.gamesfanteam.nagramix`, verify no upstream identifier
+   remains, and package `Payload/NagramiX.app` as `NagramiX.ipa`.
 7. Sign/install with SideStore and validate launch plus Telegram authorization.
 8. Only after the checkpoint passes, inventory NagramX 1258 features and port
    them in isolated iOS modules by coherent feature groups.
@@ -33,6 +35,7 @@ compiled or linked into NagramiX.
 | GitHub runner image differs from required Xcode 26.2/macOS 26 | Build cannot start | Use `macos-26`, verify the first run, and adjust only to an available image compatible with `versions.json`. |
 | Updating the pinned upstream commit changes build inputs | Regressions or overlay failure | Update the SHA explicitly, review upstream changes, and let exact overlay checks fail loudly. |
 | Fake signing still leaves entitlements or nested signatures | SideStore rejects or app crashes | Strip `_CodeSignature` and provisioning profiles; inspect every nested bundle before checkpoint approval. |
+| Fake profiles are bound to Telegram's official Bundle ID | Bazel configuration fails before compilation | Use that ID only for the fake-signed intermediate, then strip signing material and rewrite all package identifiers before upload. |
 | App extensions require unavailable entitlements | Installation or launch fails | First green iteration may disable nonessential extensions; add them back individually after authorization works. |
 | Separate URL schemes/keychain groups are incomplete | Login callback or stored session fails | Use a distinct scheme and bundle prefix; test cold launch, login, restart, and session persistence on-device. |
 | Telegram API credentials are missing/incorrect | Authorization fails | Fail CI early; use credentials registered for NagramiX at `my.telegram.org`. |

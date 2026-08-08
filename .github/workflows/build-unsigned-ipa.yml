@@ -93,7 +93,8 @@ jobs:
           unzip -q "$source_ipa" -d "$RUNNER_TEMP/nagramix-unpack"
           bash scripts/package_unsigned_ipa.sh \
             "$RUNNER_TEMP/nagramix-unpack/Payload/Telegram.app" \
-            NagramiX.ipa
+            NagramiX.ipa \
+            com.gamesfanteam.nagramix
 
       - name: Record provenance
         shell: bash
