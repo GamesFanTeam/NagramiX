@@ -15,7 +15,7 @@ def replace_text(path: Path, old: str, new: str) -> bool:
     content = path.read_text(encoding="utf-8")
     if old not in content:
         return False
-    path.write_text(content.replace(old, new), encoding="utf-8")
+    path.write_text(content.replace(old, new, 1), encoding="utf-8")
     return True
 
 
