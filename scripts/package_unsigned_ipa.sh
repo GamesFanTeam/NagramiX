@@ -17,8 +17,17 @@ cp -R "$APP_PATH" .nagramix-package/Payload/NagramiX.app
 find .nagramix-package/Payload/NagramiX.app -name '_CodeSignature' -type d -prune -exec rm -rf {} +
 find .nagramix-package/Payload/NagramiX.app -name 'embedded.mobileprovision' -type f -delete
 
+# The upstream target keeps "Telegram" as the root Info.plist display name even
+# when the Bazel product is renamed. This metadata-only rewrite is safe after
+# stripping the temporary build signature; the bundle identifier itself must
+# already have been compiled with the NagramiX configuration.
+/usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName NagramiX' .nagramix-package/Payload/NagramiX.app/Info.plist
+/usr/libexec/PlistBuddy -c 'Set :CFBundleName NagramiX' .nagramix-package/Payload/NagramiX.app/Info.plist
+
 final_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' .nagramix-package/Payload/NagramiX.app/Info.plist)"
 test "$final_id" = "$TARGET_BUNDLE_ID" || { echo "Unexpected final bundle id: $final_id" >&2; exit 1; }
+final_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' .nagramix-package/Payload/NagramiX.app/Info.plist)"
+test "$final_name" = "NagramiX" || { echo "Unexpected final display name: $final_name" >&2; exit 1; }
 (
   cd .nagramix-package
   /usr/bin/zip -qry "../$OUTPUT_PATH" Payload
