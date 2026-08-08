@@ -20,8 +20,9 @@ compiled or linked into NagramiX.
    profiles, certificates, private keys, or Apple account data.
 4. Apply deterministic branding and native build-time identifier
    `com.gamesfanteam.nagramix`.
-5. Build `release_arm64` without provisioning profiles. Disable extensions for
-   the first launch/login checkpoint to avoid unsupported entitlement groups.
+5. Generate build-only self-signed profiles for the native NagramiX identifier,
+   then build `release_arm64`. Disable extensions for the first launch/login
+   checkpoint to avoid unsupported entitlement groups.
 6. Remove residual signing material, verify that the compiled identifier is
    already `com.gamesfanteam.nagramix`, and package `Payload/NagramiX.app` as
    `NagramiX.ipa`.
@@ -38,7 +39,7 @@ compiled or linked into NagramiX.
 | GitHub runner image differs from required Xcode 26.2/macOS 26 | Build cannot start | Use `macos-26`, verify the first run, and adjust only to an available image compatible with `versions.json`. |
 | Updating the pinned upstream commit changes build inputs | Regressions or overlay failure | Update the SHA explicitly, review upstream changes, and let exact overlay checks fail loudly. |
 | Residual signing material remains | SideStore rejects or app crashes | Strip `_CodeSignature` and provisioning profiles; inspect every nested bundle before checkpoint approval. |
-| Fake profiles are bound to Telegram's official Bundle ID | Compile-time and packaged identities diverge, causing launch hangs | Do not use fake profiles; build natively with the NagramiX identifier and no profiles/extensions for the first login checkpoint. |
+| Upstream fake profiles are bound to Telegram's official Bundle ID | Compile-time and packaged identities diverge, causing launch hangs | Generate temporary self-signed build-only profiles with the native NagramiX identifier; remove them before packaging. |
 | App extensions require unavailable entitlements | Installation or launch fails | First green iteration may disable nonessential extensions; add them back individually after authorization works. |
 | Separate URL schemes/keychain groups are incomplete | Login callback or stored session fails | Use a distinct scheme and bundle prefix; test cold launch, login, restart, and session persistence on-device. |
 | Telegram API credentials are missing/incorrect | Authorization fails | Fail CI early; use credentials registered for NagramiX at `my.telegram.org`. |

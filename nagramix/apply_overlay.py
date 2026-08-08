@@ -49,14 +49,11 @@ def main() -> None:
     if not replace_text(build_file, old_fragment, new_fragment):
         raise SystemExit("Pinned CFBundleDisplayName fragment was not found")
 
-    # Build the device app with its real identifier and without bundle-bound
-    # provisioning profiles. Extensions stay out of the first login checkpoint.
+    # Build the device app with its real identifier and generated build-only
+    # profiles. Extensions stay out of the first login checkpoint.
     make_file = source / "build-system" / "Make" / "Make.py"
     anchor = "    bazel_command_line.set_configuration(arguments.configuration)"
-    replacement = """    if arguments.xcodeManagedCodesigning:
-        bazel_command_line.set_disable_provisioning_profiles()
-        bazel_command_line.common_build_args += ['--//Telegram:disableExtensions']
-
+    replacement = """    bazel_command_line.common_build_args += ['--//Telegram:disableExtensions']
     bazel_command_line.set_configuration(arguments.configuration)"""
     if not replace_text(make_file, anchor, replacement):
         raise SystemExit("Pinned unsigned-build anchor was not found in Make.py")
