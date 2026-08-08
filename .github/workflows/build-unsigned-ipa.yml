@@ -76,17 +76,29 @@ jobs:
           path: ${{ env.BAZEL_CACHE }}
           key: telegram-ios-${{ runner.os }}-${{ runner.arch }}-${{ env.TELEGRAM_IOS_REF }}
 
-      - name: Build arm64 device application with fake signing
+      - name: Generate build-only NagramiX profiles
+        shell: bash
+        run: |
+          python3 nagramix/generate_fake_profiles.py \
+            --source-profiles Telegram-iOS/build-system/fake-codesigning/profiles \
+            --source-certs Telegram-iOS/build-system/fake-codesigning/certs \
+            --destination "$RUNNER_TEMP/nagramix-codesigning" \
+            --upstream-team C67CF9S4VU \
+            --upstream-bundle ph.telegra.Telegraph \
+            --team NAGRAMIX0 \
+            --bundle com.gamesfanteam.nagramix
+
+      - name: Build native NagramiX arm64 application without profiles
         working-directory: Telegram-iOS
         shell: bash
         run: |
-          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          python3 build-system/Make/ImportCertificates.py --path "$RUNNER_TEMP/nagramix-codesigning/certs"
           python3 build-system/Make/Make.py \
             --cacheDir="$BAZEL_CACHE" \
             --overrideXcodeVersion \
             build \
             --configurationPath="$RUNNER_TEMP/nagramix-configuration.json" \
-            --codesigningInformationPath=build-system/fake-codesigning \
+            --codesigningInformationPath="$RUNNER_TEMP/nagramix-codesigning" \
             --buildNumber="${GITHUB_RUN_NUMBER}" \
             --configuration=release_arm64 \
             --outputBuildArtifactsPath="$RUNNER_TEMP/build-artifacts"

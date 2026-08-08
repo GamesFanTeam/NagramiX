@@ -15,8 +15,7 @@ Apple certificate, and packages `NagramiX.ipa` for later signing by SideStore.
 - Upstream application version: Telegram-iOS 12.9.2 (`master`, pinned in
   `nagramix/upstream.env`)
 - Android feature reference: NagramX tag `1258` / 12.9.2
-- Final unsigned-package Bundle ID: `com.gamesfanteam.nagramix` (applied after
-  removing Telegram's build-only fake signature)
+- Native build-time Bundle ID: `com.gamesfanteam.nagramix`
 - Signing assets: none stored in this repository
 - Output: unsigned `NagramiX.ipa` GitHub Actions artifact
 
