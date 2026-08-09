@@ -91,7 +91,7 @@ def main() -> None:
         ("NagramiXSilver", "4.png"),
         ("NagramiXLime", "5.png"),
         ("NagramiXFlame", "6.png"),
-        ("NagramiXAurora", "7.png"),
+        ("NagramiXSunset", "7.png"),
         ("NagramiXRuby", "8.png"),
     ]
     alternate_sizes = [
@@ -149,7 +149,7 @@ def main() -> None:
     "NagramiXSilver",
     "NagramiXLime",
     "NagramiXFlame",
-    "NagramiXAurora",
+    "NagramiXSunset",
     "NagramiXRuby",
 ]
 """
@@ -182,7 +182,7 @@ def main() -> None:
                     PresentationAppIcon(name: "NagramiXSilver", imageName: "NagramiXSilver"),
                     PresentationAppIcon(name: "NagramiXLime", imageName: "NagramiXLime"),
                     PresentationAppIcon(name: "NagramiXFlame", imageName: "NagramiXFlame"),
-                    PresentationAppIcon(name: "NagramiXAurora", imageName: "NagramiXAurora"),
+                    PresentationAppIcon(name: "NagramiXSunset", imageName: "NagramiXSunset"),
                     PresentationAppIcon(name: "NagramiXRuby", imageName: "NagramiXRuby")
                 ]
 """
@@ -210,8 +210,8 @@ def main() -> None:
                                     name = isRussian ? "Лайм" : "Lime"
                                 case "NagramiXFlame":
                                     name = isRussian ? "Пламя" : "Flame"
-                                case "NagramiXAurora":
-                                    name = isRussian ? "Аврора" : "Aurora"
+                                case "NagramiXSunset":
+                                    name = isRussian ? "Закат" : "Sunset"
                                 case "NagramiXRuby":
                                     name = isRussian ? "Рубин" : "Ruby"
 """
