@@ -6,7 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 from pathlib import Path
+
+from apply_features import apply_features
 
 
 def replace_text(path: Path, old: str, new: str) -> bool:
@@ -58,7 +61,31 @@ def main() -> None:
     if not replace_text(make_file, anchor, replacement):
         raise SystemExit("Pinned unsigned-build anchor was not found in Make.py")
 
+    # Replace the primary Icon Composer layer with the official NagramiX asset.
+    # Icon Composer generates every required iPhone/iPad size during the build.
+    icon_source = Path(__file__).with_name("branding") / "NagramiX-AppIcon.png"
+    icon_bundle = source / "Telegram" / "Telegram-iOS" / "Telegram.icon"
+    icon_assets = icon_bundle / "Assets"
+    icon_assets.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(icon_source, icon_assets / "NagramiX-AppIcon.png")
+    icon_manifest_path = icon_bundle / "icon.json"
+    icon_manifest = json.loads(icon_manifest_path.read_text(encoding="utf-8"))
+    icon_manifest["groups"][0]["layers"] = [
+        {
+            "blend-mode-specializations": [{"value": "normal"}],
+            "glass": False,
+            "image-name": "NagramiX-AppIcon.png",
+            "name": "NagramiX",
+        }
+    ]
+    icon_manifest["groups"][0]["blur-material"] = 0
+    icon_manifest["groups"][0]["specular"] = False
+    icon_manifest_path.write_text(json.dumps(icon_manifest, indent=2) + "\n", encoding="utf-8")
+
+    apply_features(source)
+
     print(f"Generated configuration: {args.configuration}")
+    print(f"Applied NagramiX app icon: {icon_source}")
 
 
 if __name__ == "__main__":
