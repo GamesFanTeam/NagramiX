@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the pinned NagramiX 0.1.3 feature overlay."""
+"""Apply the pinned NagramiX 0.1.4 feature overlay."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ def replace_once(path: Path, old: str, new: str, label: str) -> None:
     new = new.replace("\n+", "\n")
     text = path.read_text(encoding="utf-8")
     if old not in text:
-        raise SystemExit(f"Pinned 0.1.3 patch anchor was not found ({label}): {path}")
+        raise SystemExit(f"Pinned 0.1.4 patch anchor was not found ({label}): {path}")
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
@@ -334,6 +334,64 @@ def apply_features(source: Path) -> None:
         """        var controllers: [ViewController] = []\n        controllers.append(self.contactsController!)\n        if showCallsTab {\n            controllers.append(self.callListController!)\n        }\n        controllers.append(self.chatListController!)\n""",
         """        var controllers: [ViewController] = []\n+        if UserDefaults.standard.bool(forKey: "nagramix.showContactsTab"), let contactsController = self.contactsController {\n+            controllers.append(contactsController)\n+        }\n+        if UserDefaults.standard.bool(forKey: "nagramix.showCallsTab"), let callListController = self.callListController {\n+            controllers.append(callListController)\n+        }\n+        controllers.append(self.chatListController!)\n""",
         "updated NagramiX root tabs",
+    )
+
+    chat_list_node = source / "submodules" / "ChatListUI" / "Sources" / "Node" / "ChatListNode.swift"
+    replace_once(
+        chat_list_node,
+        """    public var hiddenPsaPeerId: EnginePeer.Id?\n    public var foundPeers: [(EnginePeer, EnginePeer?)]\n""",
+        """    public var hiddenPsaPeerId: EnginePeer.Id?\n    public var showProxySponsor: Bool\n    public var foundPeers: [(EnginePeer, EnginePeer?)]\n""",
+        "proxy sponsor state property",
+    )
+    replace_once(
+        chat_list_node,
+        """        hiddenPsaPeerId: EnginePeer.Id?,\n        selectedThreadIds: Set<Int64>,\n""",
+        """        hiddenPsaPeerId: EnginePeer.Id?,\n        showProxySponsor: Bool,\n        selectedThreadIds: Set<Int64>,\n""",
+        "proxy sponsor state initializer parameter",
+    )
+    replace_once(
+        chat_list_node,
+        """        self.hiddenPsaPeerId = hiddenPsaPeerId\n        self.selectedThreadIds = selectedThreadIds\n""",
+        """        self.hiddenPsaPeerId = hiddenPsaPeerId\n        self.showProxySponsor = showProxySponsor\n        self.selectedThreadIds = selectedThreadIds\n""",
+        "proxy sponsor state initializer assignment",
+    )
+    replace_once(
+        chat_list_node,
+        """        if lhs.hiddenPsaPeerId != rhs.hiddenPsaPeerId {\n            return false\n        }\n        if lhs.selectedThreadIds != rhs.selectedThreadIds {\n""",
+        """        if lhs.hiddenPsaPeerId != rhs.hiddenPsaPeerId {\n            return false\n        }\n        if lhs.showProxySponsor != rhs.showProxySponsor {\n            return false\n        }\n        if lhs.selectedThreadIds != rhs.selectedThreadIds {\n""",
+        "proxy sponsor state equality",
+    )
+    replace_once(
+        chat_list_node,
+        """    private let statePromise: ValuePromise<ChatListNodeState>\n    public var state: Signal<ChatListNodeState, NoError> {\n""",
+        """    private let statePromise: ValuePromise<ChatListNodeState>\n    private var nagramixPreferencesObserver: NSObjectProtocol?\n    public var state: Signal<ChatListNodeState, NoError> {\n""",
+        "proxy sponsor preferences observer property",
+    )
+    replace_once(
+        chat_list_node,
+        """hiddenItemShouldBeTemporaryRevealed: false, hiddenPsaPeerId: nil, selectedThreadIds: Set(), archiveStoryState: nil)\n""",
+        """hiddenItemShouldBeTemporaryRevealed: false, hiddenPsaPeerId: nil, showProxySponsor: UserDefaults.standard.bool(forKey: "nagramix.showProxySponsor"), selectedThreadIds: Set(), archiveStoryState: nil)\n""",
+        "proxy sponsor initial visibility",
+    )
+    replace_once(
+        chat_list_node,
+        """        super.init()\n        \n        if case .internal = context.sharedContext.applicationBindings.appBuildType {\n""",
+        """        super.init()\n+        \n+        self.nagramixPreferencesObserver = NotificationCenter.default.addObserver(forName: Notification.Name("NagramiXPreferencesChanged"), object: nil, queue: .main, using: { [weak self] _ in\n+            self?.updateState { state in\n+                var state = state\n+                state.showProxySponsor = UserDefaults.standard.bool(forKey: "nagramix.showProxySponsor")\n+                return state\n+            }\n+        })\n+        \n+        if case .internal = context.sharedContext.applicationBindings.appBuildType {\n""",
+        "proxy sponsor preferences observer setup",
+    )
+    replace_once(
+        chat_list_node,
+        """        self.updateIsMainTabDisposable?.dispose()\n    }\n""",
+        """        self.updateIsMainTabDisposable?.dispose()\n+        if let nagramixPreferencesObserver = self.nagramixPreferencesObserver {\n+            NotificationCenter.default.removeObserver(nagramixPreferencesObserver)\n+        }\n+    }\n""",
+        "proxy sponsor preferences observer cleanup",
+    )
+
+    chat_list_entries = source / "submodules" / "ChatListUI" / "Sources" / "Node" / "ChatListNodeEntries.swift"
+    replace_once(
+        chat_list_entries,
+        """    let filteredAdditionalItemEntries = view.additionalItems.filter { item -> Bool in\n        return item.item.renderedPeer.peerId != state.hiddenPsaPeerId\n    }\n""",
+        """    let filteredAdditionalItemEntries = view.additionalItems.filter { item -> Bool in\n        if item.item.renderedPeer.peerId == state.hiddenPsaPeerId {\n            return false\n        }\n        if case .proxy = item.promoInfo.content {\n            return state.showProxySponsor\n        }\n        return true\n    }\n""",
+        "hide proxy sponsor by default",
     )
 
     message_timestamp = source / "submodules" / "TelegramUI" / "Components" / "Chat" / "ChatMessageDateAndStatusNode" / "Sources" / "StringForMessageTimestampStatus.swift"

@@ -9,6 +9,7 @@ import AccountContext
 private enum NagramiXPreferenceKey {
     static let showContactsTab = "nagramix.showContactsTab"
     static let showCallsTab = "nagramix.showCallsTab"
+    static let showProxySponsor = "nagramix.showProxySponsor"
     static let showMessageSeconds = "nagramix.showMessageSeconds"
     static let confirmCalls = "nagramix.confirmCalls"
     static let hidePhoneNumber = "nagramix.hidePhoneNumber"
@@ -22,6 +23,7 @@ private enum NagramiXPreferenceKey {
 private struct NagramiXLocalSettings: Equatable {
     var showContactsTab: Bool
     var showCallsTab: Bool
+    var showProxySponsor: Bool
     var showMessageSeconds: Bool
     var confirmCalls: Bool
     var hidePhoneNumber: Bool
@@ -35,6 +37,7 @@ private struct NagramiXLocalSettings: Equatable {
         return NagramiXLocalSettings(
             showContactsTab: defaults.bool(forKey: NagramiXPreferenceKey.showContactsTab),
             showCallsTab: defaults.bool(forKey: NagramiXPreferenceKey.showCallsTab),
+            showProxySponsor: defaults.bool(forKey: NagramiXPreferenceKey.showProxySponsor),
             showMessageSeconds: defaults.bool(forKey: NagramiXPreferenceKey.showMessageSeconds),
             confirmCalls: defaults.bool(forKey: NagramiXPreferenceKey.confirmCalls),
             hidePhoneNumber: defaults.bool(forKey: NagramiXPreferenceKey.hidePhoneNumber),
@@ -152,12 +155,13 @@ private func nagramixSettingsEntries(presentationData: PresentationData, setting
         .toggle(NagramiXSettingsSection.media.rawValue, 1, isRussian ? "Задняя камера для круглых видео" : "Back Camera for Video Messages", settings.preferBackCamera, \.preferBackCamera, NagramiXPreferenceKey.preferBackCamera),
 
         .header(NagramiXSettingsSection.tools.rawValue, isRussian ? "ИНСТРУМЕНТЫ" : "TOOLS"),
+        .toggle(NagramiXSettingsSection.tools.rawValue, 1, isRussian ? "Показывать Спонсор Прокси" : "Show Proxy Sponsor", settings.showProxySponsor, \.showProxySponsor, NagramiXPreferenceKey.showProxySponsor),
         .proxy(isRussian ? "Прокси и автопереключение" : "Proxy and Auto Switch"),
         .appIcons(isRussian ? "Иконки приложения" : "App Icons"),
 
         .information(isRussian
-            ? "Изменения нижней панели применяются сразу.\nСкрытие номера действует только в интерфейсе NagramiX.\nНастройки конфиденциальности Telegram при этом не изменяются."
-            : "Tab bar changes are applied immediately.\nPhone number hiding only affects the NagramiX interface.\nTelegram privacy settings are not changed."),
+            ? "Изменения нижней панели применяются сразу.\nСпонсор Прокси по умолчанию скрыт.\nСкрытие номера действует только в интерфейсе NagramiX.\nНастройки конфиденциальности Telegram при этом не изменяются."
+            : "Tab bar changes are applied immediately.\nProxy Sponsor is hidden by default.\nPhone number hiding only affects the NagramiX interface.\nTelegram privacy settings are not changed."),
     ]
 }
 
