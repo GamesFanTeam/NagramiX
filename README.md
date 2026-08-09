@@ -1,27 +1,29 @@
 # NagramiX
 
-NagramiX is an independent, unofficial Telegram client for iOS. The project uses
-[Telegram-iOS](https://github.com/TelegramMessenger/Telegram-iOS) as its source
-base and ports selected ideas from
-[NagramX](https://github.com/risin42/NagramX) as native iOS features.
+NagramiX — независимый неофициальный Telegram-клиент для iOS. Кодовая база —
+[Telegram-iOS](https://github.com/TelegramMessenger/Telegram-iOS), а выбранные
+возможности [NagramX](https://github.com/risin42/NagramX) переносятся как
+нативные функции iOS.
 
-The bootstrap is intentionally an overlay instead of a fork containing hundreds
-of thousands of upstream files. CI checks out a pinned Telegram-iOS revision,
-applies the small NagramiX layer, builds an arm64 device application without an
-Apple certificate, and packages `NagramiX.ipa` for later signing by SideStore.
+Проект оформлен как изолированный overlay, чтобы обновления Telegram-iOS было
+проще переносить. GitHub Actions загружает зафиксированную ревизию upstream,
+применяет слой NagramiX, собирает приложение arm64 без сертификата Apple и
+упаковывает его для последующей подписи на стороне пользователя.
 
-## Bootstrap status
+## Текущая версия: 0.1.2
 
-- Upstream application version: Telegram-iOS 12.9.2 (`master`, pinned in
-  `nagramix/upstream.env`)
-- Android feature reference: NagramX tag `1258` / 12.9.2
-- Native build-time Bundle ID: `com.gamesfanteam.nagramix`
-- Signing assets: none stored in this repository
-- Output: unsigned `NagramiX.ipa` GitHub Actions artifact
+- База: Telegram-iOS 12.9.2 (ревизия закреплена в `nagramix/upstream.env`).
+- Ориентир функций: NagramX tag `1258` / 12.9.2.
+- Bundle ID: `com.gamesfanteam.nagramix`.
+- Добавлена официальная иконка NagramiX.
+- Добавлено автоматическое переключение на доступный сохранённый прокси при
+  длительной потере соединения; функция по умолчанию выключена.
+- Результат сборки: неподписанный `NagramiX-0.1.2-unsigned.ipa`.
+- Сертификаты Apple и данные подписи в репозитории не хранятся.
 
-The first workflow run requires repository secrets `TELEGRAM_API_ID` and
-`TELEGRAM_API_HASH`, obtained for this app at <https://my.telegram.org/apps>.
-These are Telegram API credentials, not Apple signing credentials.
+Для сборки нужны секреты репозитория `TELEGRAM_API_ID` и `TELEGRAM_API_HASH`,
+полученные для приложения на <https://my.telegram.org/apps>. Это реквизиты
+Telegram API, а не данные подписи Apple.
 
-See [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md) for the implementation plan, risks,
-and SideStore test checklist.
+План, риски и чек-лист проверки через SideStore находятся в
+[docs/BOOTSTRAP.md](docs/BOOTSTRAP.md).
