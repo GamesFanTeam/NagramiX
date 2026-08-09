@@ -25,6 +25,10 @@ def localize_debug_file(path: Path, translations: dict[str, str], screen_title: 
 private func nagramixDebugTitle(_ presentationData: PresentationData, _ english: String, _ russian: String) -> String {
     return presentationData.strings.baseLanguageCode == "ru" ? russian : english
 }
+
+private func nagramixDebugTitle(_ presentationData: ItemListPresentationData, _ english: String, _ russian: String) -> String {
+    return presentationData.strings.baseLanguageCode == "ru" ? russian : english
+}
 """
     if import_anchor not in text:
         raise SystemExit(f"Debug localization import anchor was not found: {path}")
