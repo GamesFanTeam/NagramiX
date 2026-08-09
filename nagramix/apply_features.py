@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the pinned NagramiX 0.1.2 feature overlay."""
+"""Apply the pinned NagramiX 0.1.3 feature overlay."""
 
 from __future__ import annotations
 
@@ -8,9 +8,12 @@ from pathlib import Path
 
 
 def replace_once(path: Path, old: str, new: str, label: str) -> None:
+    # Keep multiline Swift replacements readable inside patches while ensuring
+    # accidental diff markers never reach the generated source.
+    new = new.replace("\n+", "\n")
     text = path.read_text(encoding="utf-8")
     if old not in text:
-        raise SystemExit(f"Pinned 0.1.2 patch anchor was not found ({label}): {path}")
+        raise SystemExit(f"Pinned 0.1.3 patch anchor was not found ({label}): {path}")
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
@@ -295,6 +298,152 @@ def apply_features(source: Path) -> None:
         """        case .proxy:\n            self.controller?.push(proxySettingsController(context: self.context))\n        case .profile:\n""",
         """        case .proxy:\n            self.controller?.push(proxySettingsController(context: self.context))\n        case .nagramix:\n            push(nagramiXSettingsController(context: self.context))\n        case .profile:\n""",
         "NagramiX settings navigation action",
+    )
+
+    root_controller = source / "submodules" / "TelegramUI" / "Sources" / "TelegramRootController.swift"
+    replace_once(
+        root_controller,
+        """    private var applicationInFocusDisposable: Disposable?\n    private var storyUploadEventsDisposable: Disposable?\n""",
+        """    private var applicationInFocusDisposable: Disposable?\n    private var storyUploadEventsDisposable: Disposable?\n    private var nagramixPreferencesObserver: NSObjectProtocol?\n""",
+        "root tab preferences observer property",
+    )
+    replace_once(
+        root_controller,
+        """        super.init(mode: .automaticMasterDetail, theme: NavigationControllerTheme(presentationTheme: self.presentationData.theme))\n        \n        self.presentationDataDisposable = (context.sharedContext.presentationData\n""",
+        """        super.init(mode: .automaticMasterDetail, theme: NavigationControllerTheme(presentationTheme: self.presentationData.theme))\n+        \n+        self.nagramixPreferencesObserver = NotificationCenter.default.addObserver(forName: Notification.Name("NagramiXPreferencesChanged"), object: nil, queue: .main, using: { [weak self] _ in\n+            self?.updateRootControllers(showCallsTab: false)\n+        })\n+        \n+        self.presentationDataDisposable = (context.sharedContext.presentationData\n""",
+        "root tab preferences observer setup",
+    )
+    replace_once(
+        root_controller,
+        """        self.storyUploadEventsDisposable?.dispose()\n    }\n""",
+        """        self.storyUploadEventsDisposable?.dispose()\n+        if let nagramixPreferencesObserver = self.nagramixPreferencesObserver {\n+            NotificationCenter.default.removeObserver(nagramixPreferencesObserver)\n+        }\n+    }\n""",
+        "root tab preferences observer cleanup",
+    )
+    replace_once(
+        root_controller,
+        """        controllers.append(contactsController)\n        \n        if showCallsTab {\n            controllers.append(callListController)\n        }\n        controllers.append(chatListController)\n""",
+        """        if UserDefaults.standard.bool(forKey: "nagramix.showContactsTab") {\n+            controllers.append(contactsController)\n+        }\n+        \n+        if UserDefaults.standard.bool(forKey: "nagramix.showCallsTab") {\n+            controllers.append(callListController)\n+        }\n+        controllers.append(chatListController)\n""",
+        "default NagramiX root tabs",
+    )
+    replace_once(
+        root_controller,
+        """        var controllers: [ViewController] = []\n        controllers.append(self.contactsController!)\n        if showCallsTab {\n            controllers.append(self.callListController!)\n        }\n        controllers.append(self.chatListController!)\n""",
+        """        var controllers: [ViewController] = []\n+        if UserDefaults.standard.bool(forKey: "nagramix.showContactsTab"), let contactsController = self.contactsController {\n+            controllers.append(contactsController)\n+        }\n+        if UserDefaults.standard.bool(forKey: "nagramix.showCallsTab"), let callListController = self.callListController {\n+            controllers.append(callListController)\n+        }\n+        controllers.append(self.chatListController!)\n""",
+        "updated NagramiX root tabs",
+    )
+
+    message_timestamp = source / "submodules" / "TelegramUI" / "Components" / "Chat" / "ChatMessageDateAndStatusNode" / "Sources" / "StringForMessageTimestampStatus.swift"
+    replace_once(
+        message_timestamp,
+        """    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)\n""",
+        """    var dateText = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat, withSeconds: UserDefaults.standard.bool(forKey: "nagramix.showMessageSeconds"))\n""",
+        "message timestamp seconds",
+    )
+
+    account_context = source / "submodules" / "TelegramUI" / "Sources" / "AccountContext.swift"
+    replace_once(
+        account_context,
+        """    public func requestCall(peerId: PeerId, isVideo: Bool, completion: @escaping () -> Void) {\n        guard let callResult = self.sharedContext.callManager?.requestCall(context: self, peerId: peerId, isVideo: isVideo, endCurrentIfAny: false) else {\n""",
+        """    public func requestCall(peerId: PeerId, isVideo: Bool, completion: @escaping () -> Void) {\n+        if UserDefaults.standard.bool(forKey: "nagramix.confirmCalls") {\n+            let presentationData = self.sharedContext.currentPresentationData.with { $0 }\n+            let isRussian = presentationData.strings.baseLanguageCode == "ru"\n+            self.sharedContext.mainWindow?.present(textAlertController(context: self, title: isRussian ? "Подтверждение вызова" : "Confirm Call", text: isRussian ? (isVideo ? "Начать видеозвонок?" : "Начать голосовой звонок?") : (isVideo ? "Start a video call?" : "Start a voice call?"), actions: [\n+                TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),\n+                TextAlertAction(type: .defaultAction, title: isRussian ? "Позвонить" : "Call", action: { [weak self] in\n+                    self?.nagramixRequestCall(peerId: peerId, isVideo: isVideo, completion: completion)\n+                })\n+            ]), on: .root)\n+        } else {\n+            self.nagramixRequestCall(peerId: peerId, isVideo: isVideo, completion: completion)\n+        }\n+    }\n+    \n+    private func nagramixRequestCall(peerId: PeerId, isVideo: Bool, completion: @escaping () -> Void) {\n+        guard let callResult = self.sharedContext.callManager?.requestCall(context: self, peerId: peerId, isVideo: isVideo, endCurrentIfAny: false) else {\n""",
+        "call confirmation wrapper",
+    )
+
+    peer_info_header = peer_info_root / "PeerInfoHeaderNode.swift"
+    replace_once(
+        peer_info_header,
+        """            if self.isSettings, case let .user(user) = peer {\n                var subtitle = formatPhoneNumber(context: self.context, number: user.phone ?? "")\n                \n                if let mainUsername = user.addressName, !mainUsername.isEmpty {\n                    subtitle = "\\(subtitle) • @\\(mainUsername)"\n                }\n""",
+        """            if self.isSettings, case let .user(user) = peer {\n+                let hidePhoneNumber = UserDefaults.standard.bool(forKey: "nagramix.hidePhoneNumber")\n+                var subtitle = hidePhoneNumber ? "••••••••" : formatPhoneNumber(context: self.context, number: user.phone ?? "")\n+                \n+                if let mainUsername = user.addressName, !mainUsername.isEmpty {\n+                    subtitle = hidePhoneNumber ? "@\\(mainUsername)" : "\\(subtitle) • @\\(mainUsername)"\n+                }\n""",
+        "hide own phone in settings header",
+    )
+    replace_once(
+        peer_info_items,
+        """        items[.info]!.append(PeerInfoScreenDisclosureItem(id: ItemPhoneNumber, label: .text(user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? ""), text: presentationData.strings.Settings_PhoneNumber, icon: PresentationResourcesSettings.recentCalls, action: {\n""",
+        """        let nagramixPhoneLabel = UserDefaults.standard.bool(forKey: "nagramix.hidePhoneNumber") ? "••••••••" : (user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? "")\n+        items[.info]!.append(PeerInfoScreenDisclosureItem(id: ItemPhoneNumber, label: .text(nagramixPhoneLabel), text: presentationData.strings.Settings_PhoneNumber, icon: PresentationResourcesSettings.recentCalls, action: {\n""",
+        "hide own phone in settings list",
+    )
+
+    peer_profile_items = peer_info_root / "PeerInfoProfileItems.swift"
+    replace_once(
+        peer_profile_items,
+        """    let birthdayContextAction: (ASDisplayNode, ContextGesture?, CGPoint?) -> Void = { node, gesture, _ in\n        interaction.openBirthdayContextMenu(node, gesture)\n    }\n    \n    if case let .user(user) = data.peer {\n""",
+        """    let birthdayContextAction: (ASDisplayNode, ContextGesture?, CGPoint?) -> Void = { node, gesture, _ in\n+        interaction.openBirthdayContextMenu(node, gesture)\n+    }\n+    \n+    if UserDefaults.standard.bool(forKey: "nagramix.showPeerIds"), let peer = data.peer {\n+        items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 900, label: "ID", text: "\\(peer.id.toInt64())", textColor: .accent, action: { _, _ in\n+            UIPasteboard.general.string = "\\(peer.id.toInt64())"\n+        }, requestLayout: { animated in\n+            interaction.requestLayout(animated)\n+        }))\n+        if let resource = peer.profileImageRepresentations.first?.resource as? CloudPeerPhotoSizeMediaResource {\n+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 901, label: "DC", text: "\\(resource.datacenterId)", textColor: .accent, action: nil, requestLayout: { animated in\n+                interaction.requestLayout(animated)\n+            }))\n+        }\n+    }\n+    \n+    if case let .user(user) = data.peer {\n""",
+        "profile id and avatar datacenter",
+    )
+
+    video_message_camera = source / "submodules" / "TelegramUI" / "Components" / "VideoMessageCameraScreen" / "Sources" / "VideoMessageCameraScreen.swift"
+    replace_once(
+        video_message_camera,
+        """            let isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: true)\n            let isFrontPosition = "".isEmpty\n""",
+        """            let isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: true)\n+            let isFrontPosition = !UserDefaults.standard.bool(forKey: "nagramix.preferBackCamera")\n""",
+        "video message default camera",
+    )
+
+    chat_list_item = source / "submodules" / "ChatListUI" / "Sources" / "Node" / "ChatListItem.swift"
+    replace_once(
+        chat_list_item,
+        """                maximumNumberOfLines: (authorAttributedString == nil && itemTags.isEmpty && forumThread == nil && topForumTopicItems.isEmpty) ? 2 : 1,\n""",
+        """                maximumNumberOfLines: UserDefaults.standard.bool(forKey: "nagramix.compactMessagePreview") ? 1 : ((authorAttributedString == nil && itemTags.isEmpty && forumThread == nil && topForumTopicItems.isEmpty) ? 2 : 1),\n""",
+        "compact chat preview",
+    )
+    replace_once(
+        chat_list_item,
+        """                itemHeight += authorSpacing\n            }\n                        \n            let rawContentRect = CGRect""",
+        """                itemHeight += authorSpacing\n+            }\n+            if UserDefaults.standard.bool(forKey: "nagramix.compactChatList") {\n+                itemHeight = max(56.0, itemHeight - 10.0)\n+            }\n+                        \n+            let rawContentRect = CGRect""",
+        "compact chat list height",
+    )
+
+    panel_interaction = source / "submodules" / "ChatPresentationInterfaceState" / "Sources" / "ChatPanelInterfaceInteraction.swift"
+    replace_once(
+        panel_interaction,
+        """    public let beginMessageSelection: ([EngineMessage.Id], @escaping (ContainedViewLayoutTransition) -> Void) -> Void\n    public let cancelMessageSelection: (ContainedViewLayoutTransition) -> Void\n""",
+        """    public let beginMessageSelection: ([EngineMessage.Id], @escaping (ContainedViewLayoutTransition) -> Void) -> Void\n+    public let selectMessagesFromAuthor: (EnginePeer.Id) -> Void\n+    public let cancelMessageSelection: (ContainedViewLayoutTransition) -> Void\n""",
+        "select from author interaction property",
+    )
+    replace_once(
+        panel_interaction,
+        """        chatController: @escaping () -> ViewController?,\n        statuses: ChatPanelInterfaceInteractionStatuses?\n    ) {\n""",
+        """        chatController: @escaping () -> ViewController?,\n+        statuses: ChatPanelInterfaceInteractionStatuses?,\n+        selectMessagesFromAuthor: @escaping (EnginePeer.Id) -> Void = { _ in }\n+    ) {\n""",
+        "select from author interaction initializer",
+    )
+    replace_once(
+        panel_interaction,
+        """        self.beginMessageSelection = beginMessageSelection\n        self.cancelMessageSelection = cancelMessageSelection\n""",
+        """        self.beginMessageSelection = beginMessageSelection\n+        self.selectMessagesFromAuthor = selectMessagesFromAuthor\n+        self.cancelMessageSelection = cancelMessageSelection\n""",
+        "select from author interaction assignment",
+    )
+
+    chat_load = source / "submodules" / "TelegramUI" / "Sources" / "Chat" / "ChatControllerLoadDisplayNode.swift"
+    replace_once(
+        chat_load,
+        """                let forwardMessageIds = messages.map { $0.id }.sorted()\n                strongSelf.forwardMessages(messageIds: forwardMessageIds)\n            }\n        }, updateForwardOptionsState:""",
+        """                let forwardMessageIds = messages.map { $0.id }.sorted()\n+                let hideNames = UserDefaults.standard.bool(forKey: "nagramix.forwardHideNamesOnce")\n+                UserDefaults.standard.removeObject(forKey: "nagramix.forwardHideNamesOnce")\n+                let options = hideNames ? ChatInterfaceForwardOptionsState(hideNames: true, hideCaptions: false, unhideNamesOnCaptionChange: false) : nil\n+                strongSelf.forwardMessages(messageIds: forwardMessageIds, options: options)\n+            }\n+        }, updateForwardOptionsState:""",
+        "forward mode handoff",
+    )
+    replace_once(
+        chat_load,
+        """        }, statuses: ChatPanelInterfaceInteractionStatuses(editingMessage: self.editingMessage.get(), startingBot: self.startingBot.get(), unblockingPeer: self.unblockingPeer.get(), searching: self.searching.get(), loadingMessage: self.loadingMessage.get(), inlineSearch: self.performingInlineSearch.get()))\n""",
+        """        }, statuses: ChatPanelInterfaceInteractionStatuses(editingMessage: self.editingMessage.get(), startingBot: self.startingBot.get(), unblockingPeer: self.unblockingPeer.get(), searching: self.searching.get(), loadingMessage: self.loadingMessage.get(), inlineSearch: self.performingInlineSearch.get()), selectMessagesFromAuthor: { [weak self] authorId in\n+            guard let self else {\n+                return\n+            }\n+            var ids: [EngineMessage.Id] = []\n+            self.chatDisplayNode.historyNode.forEachItemNode { itemNode in\n+                guard let itemNode = itemNode as? ChatMessageItemView, let item = itemNode.item else {\n+                    return\n+                }\n+                for (message, _) in item.content {\n+                    if message.author?.id == authorId {\n+                        ids.append(message.id)\n+                    }\n+                }\n+            }\n+            let uniqueIds = Array(Set(ids)).sorted()\n+            if !uniqueIds.isEmpty {\n+                self.interfaceInteraction?.beginMessageSelection(uniqueIds, { _ in })\n+            }\n+        })\n""",
+        "select loaded messages from author",
+    )
+
+    context_menus = source / "submodules" / "TelegramUI" / "Sources" / "ChatInterfaceStateContextMenus.swift"
+    replace_once(
+        context_menus,
+        """        if data.messageActions.options.contains(.forward) {\n            if !isCopyProtected {\n                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuForward, icon: { theme in\n                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)\n                }, action: { _, f in\n                    interfaceInteraction.forwardMessages(selectAll || isImage ? messages : [message])\n                    f(.dismissWithoutContent)\n                })))\n            }\n        }\n""",
+        """        if data.messageActions.options.contains(.forward) {\n+            if !isCopyProtected {\n+                let isRussian = chatPresentationInterfaceState.strings.baseLanguageCode == "ru"\n+                actions.append(.action(ContextMenuActionItem(text: isRussian ? "Переслать" : "Forward without Author", icon: { theme in\n+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)\n+                }, action: { _, f in\n+                    UserDefaults.standard.set(true, forKey: "nagramix.forwardHideNamesOnce")\n+                    interfaceInteraction.forwardMessages(selectAll || isImage ? messages : [message])\n+                    f(.dismissWithoutContent)\n+                })))\n+                actions.append(.action(ContextMenuActionItem(text: isRussian ? "Переслать от" : "Forward with Author", icon: { theme in\n+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Forward"), color: theme.actionSheet.primaryTextColor)\n+                }, action: { _, f in\n+                    UserDefaults.standard.removeObject(forKey: "nagramix.forwardHideNamesOnce")\n+                    interfaceInteraction.forwardMessages(selectAll || isImage ? messages : [message])\n+                    f(.dismissWithoutContent)\n+                })))\n+                actions.append(.action(ContextMenuActionItem(text: isRussian ? "Сохранить в Избранное" : "Save to Saved Messages", icon: { theme in\n+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Fave"), color: theme.actionSheet.primaryTextColor)\n+                }, action: { _, f in\n+                    let selectedMessages = selectAll || isImage ? messages : [message]\n+                    let enqueue = selectedMessages.map { value in\n+                        return EnqueueMessage.forward(source: value.id, threadId: nil, grouping: .auto, attributes: [], correlationId: nil)\n+                    }\n+                    let _ = enqueueMessages(account: context.account, peerId: context.account.peerId, messages: enqueue).startStandalone()\n+                    controllerInteraction.displayUndo(.forward(savedMessages: true, text: chatPresentationInterfaceState.strings.Conversation_ForwardTooltip_SavedMessages_One))\n+                    f(.dismissWithoutContent)\n+                })))\n+            }\n+        }\n""",
+        "NagramiX forward and saved messages actions",
+    )
+    replace_once(
+        context_menus,
+        """        if !isCopyProtected {\n            for media in message.effectiveMedia {\n                if let file = media as? TelegramMediaFile {\n                    if file.isMusic {\n                        actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_SaveToFiles, icon: { theme in\n                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)\n                        }, action: { _, f in\n                            controllerInteraction.saveMediaToFiles(message.id)\n                            f(.default)\n                        })))\n                    }\n                    break\n                }\n            }\n        }\n""",
+        """        if !isCopyProtected {\n+            let hasSavableAttachment = message.effectiveMedia.contains(where: { media in\n+                return media is TelegramMediaFile || media is TelegramMediaImage\n+            })\n+            if hasSavableAttachment {\n+                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.baseLanguageCode == "ru" ? "Сохранить в Файлы" : "Save to Files", icon: { theme in\n+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)\n+                }, action: { _, f in\n+                    controllerInteraction.saveMediaToFiles(message.id)\n+                    f(.default)\n+                })))\n+            }\n+        }\n""",
+        "save any attachment to files",
+    )
+    replace_once(
+        context_menus,
+        """                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuSelect, icon: { theme in\n                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Select"), color: theme.actionSheet.primaryTextColor)\n                }, action: { _, f in\n                    interfaceInteraction.beginMessageSelection(selectAll ? messages.map { $0.id } : [message.id], { transition in\n                        f(.custom(transition))\n                    })\n                })))\n            }\n""",
+        """                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuSelect, icon: { theme in\n+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Select"), color: theme.actionSheet.primaryTextColor)\n+                }, action: { _, f in\n+                    interfaceInteraction.beginMessageSelection(selectAll ? messages.map { $0.id } : [message.id], { transition in\n+                        f(.custom(transition))\n+                    })\n+                })))\n+                if let authorId = message.author?.id {\n+                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.baseLanguageCode == "ru" ? "Выбрать от" : "Select from Author", icon: { theme in\n+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/SelectAll"), color: theme.actionSheet.primaryTextColor)\n+                    }, action: { _, f in\n+                        interfaceInteraction.selectMessagesFromAuthor(authorId)\n+                        f(.dismissWithoutContent)\n+                    })))\n+                }\n+            }\n""",
+        "select from author menu action",
     )
 
     print("Applied NagramiX feature overlay, including Russian Debug UI")
