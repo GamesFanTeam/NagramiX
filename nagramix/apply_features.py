@@ -284,14 +284,8 @@ def apply_features(source: Path) -> None:
     peer_info_items = peer_info_root / "PeerInfoSettingsItems.swift"
     replace_once(
         peer_info_items,
-        """    case proxy\n    case apps\n""",
-        """    case proxy\n    case nagramix\n    case apps\n""",
-        "NagramiX settings list section",
-    )
-    replace_once(
-        peer_info_items,
-        """    var appIndex = 1000\n""",
-        """    let isRussian = presentationData.strings.baseLanguageCode == \"ru\"\n    items[.nagramix]!.append(PeerInfoScreenDisclosureItem(id: 0, text: isRussian ? \"Настройки NagramiX\" : \"NagramiX Settings\", icon: PresentationResourcesSettings.appearance, action: {\n        interaction.openSettings(.nagramix)\n    }))\n\n    var appIndex = 1000\n""",
+        """    items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.Settings_SavedMessages, icon: PresentationResourcesSettings.savedMessages, action: {\n""",
+        """    let isRussian = presentationData.strings.baseLanguageCode == \"ru\"\n    items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 0, text: isRussian ? \"Настройки NagramiX\" : \"NagramiX Settings\", icon: PresentationResourcesSettings.appearance, action: {\n        interaction.openSettings(.nagramix)\n    }))\n    items[.shortcuts]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.Settings_SavedMessages, icon: PresentationResourcesSettings.savedMessages, action: {\n""",
         "NagramiX settings main row",
     )
 
