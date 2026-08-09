@@ -46,6 +46,10 @@ private func nagramixDebugTitle(_ presentationData: PresentationData, _ english:
 def apply_features(source: Path) -> None:
     overlay = Path(__file__).resolve().parent
 
+    settings_source = overlay / "Sources" / "NagramiXSettingsController.swift"
+    settings_target = source / "submodules" / "SettingsUI" / "Sources" / settings_source.name
+    shutil.copy2(settings_source, settings_target)
+
     coordinator_source = overlay / "Sources" / "ProxyAutoSwitchCoordinator.swift"
     coordinator_target = source / "submodules" / "TelegramCore" / "Sources" / "Settings" / coordinator_source.name
     shutil.copy2(coordinator_source, coordinator_target)
@@ -266,6 +270,37 @@ def apply_features(source: Path) -> None:
             "Test": "Тестовый сервер",
         },
         ("Accounts", "Аккаунты"),
+    )
+
+    peer_info_root = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoScreen" / "Sources"
+    peer_info_screen = peer_info_root / "PeerInfoScreen.swift"
+    replace_once(
+        peer_info_screen,
+        """    case proxy\n    case stories\n""",
+        """    case proxy\n    case nagramix\n    case stories\n""",
+        "NagramiX settings navigation section",
+    )
+
+    peer_info_items = peer_info_root / "PeerInfoSettingsItems.swift"
+    replace_once(
+        peer_info_items,
+        """    case proxy\n    case apps\n""",
+        """    case proxy\n    case nagramix\n    case apps\n""",
+        "NagramiX settings list section",
+    )
+    replace_once(
+        peer_info_items,
+        """    var appIndex = 1000\n""",
+        """    let isRussian = presentationData.strings.baseLanguageCode == \"ru\"\n    items[.nagramix]!.append(PeerInfoScreenDisclosureItem(id: 0, text: isRussian ? \"Настройки NagramiX\" : \"NagramiX Settings\", icon: PresentationResourcesSettings.appearance, action: {\n        interaction.openSettings(.nagramix)\n    }))\n\n    var appIndex = 1000\n""",
+        "NagramiX settings main row",
+    )
+
+    peer_info_actions = peer_info_root / "PeerInfoScreenSettingsActions.swift"
+    replace_once(
+        peer_info_actions,
+        """        case .proxy:\n            self.controller?.push(proxySettingsController(context: self.context))\n        case .profile:\n""",
+        """        case .proxy:\n            self.controller?.push(proxySettingsController(context: self.context))\n        case .nagramix:\n            push(nagramiXSettingsController(context: self.context))\n        case .profile:\n""",
+        "NagramiX settings navigation action",
     )
 
     print("Applied NagramiX feature overlay, including Russian Debug UI")
