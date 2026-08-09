@@ -14,6 +14,35 @@ def replace_once(path: Path, old: str, new: str, label: str) -> None:
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
+def localize_debug_file(path: Path, translations: dict[str, str], screen_title: tuple[str, str]) -> None:
+    text = path.read_text(encoding="utf-8")
+    import_anchor = "import AccountContext\n"
+    helper = """import AccountContext
+
+private func nagramixDebugTitle(_ presentationData: PresentationData, _ english: String, _ russian: String) -> String {
+    return presentationData.strings.baseLanguageCode == "ru" ? russian : english
+}
+"""
+    if import_anchor not in text:
+        raise SystemExit(f"Debug localization import anchor was not found: {path}")
+    text = text.replace(import_anchor, helper, 1)
+
+    for english, russian in translations.items():
+        old = f'title: "{english}"'
+        new = f'title: nagramixDebugTitle(presentationData, "{english}", "{russian}")'
+        if old not in text:
+            raise SystemExit(f"Debug localization string was not found ({english}): {path}")
+        text = text.replace(old, new)
+
+    english_title, russian_title = screen_title
+    old_title = f'title: .text("{english_title}")'
+    new_title = f'title: .text(nagramixDebugTitle(presentationData, "{english_title}", "{russian_title}"))'
+    if old_title not in text:
+        raise SystemExit(f"Debug localization screen title was not found ({english_title}): {path}")
+    text = text.replace(old_title, new_title, 1)
+    path.write_text(text, encoding="utf-8")
+
+
 def apply_features(source: Path) -> None:
     overlay = Path(__file__).resolve().parent
 
@@ -143,4 +172,100 @@ def apply_features(source: Path) -> None:
         "proxy UI actions",
     )
 
-    print("Applied NagramiX 0.1.2 proxy auto-switch feature overlay")
+    debug_ui = source / "submodules" / "DebugSettingsUI" / "Sources"
+    debug_controller = debug_ui / "DebugController.swift"
+    localize_debug_file(
+        debug_controller,
+        {
+            "Simulate Stickers Import": "Имитировать импорт стикеров",
+            "Send Logs (Up to 40 MB)": "Отправить логи (до 40 МБ)",
+            "Send Latest Logs (Up to 4 MB)": "Отправить последние логи (до 4 МБ)",
+            "Send Share Logs (Up to 40 MB)": "Отправить логи общего доступа (до 40 МБ)",
+            "Send Group Call Logs (Up to 40 MB)": "Отправить логи группового звонка (до 40 МБ)",
+            "Send Notification Logs (Up to 40 MB)": "Отправить логи уведомлений (до 40 МБ)",
+            "Send Critical Logs": "Отправить критические логи",
+            "Send All Logs": "Отправить все логи",
+            "Send Storage Stats": "Отправить статистику хранилища",
+            "Via Telegram": "Через Telegram",
+            "Via Email": "По электронной почте",
+            "Accounts": "Аккаунты",
+            "Log to File": "Записывать лог в файл",
+            "Log to Console": "Выводить лог в консоль",
+            "Remove Sensitive Data": "Удалять конфиденциальные данные",
+            "Keep Chat Stack": "Сохранять стек чатов",
+            "Skip read history": "Не отмечать историю прочитанной",
+            "Show Typing": "Показывать набор текста",
+            "Rating Debug": "Отладка рейтинга",
+            "Crash when slow": "Сбой при медленной работе",
+            "Crash on memory pressure": "Сбой при нехватке памяти",
+            "Clear Tips": "Сбросить подсказки",
+            "Log Language Recognition": "Логировать распознавание языка",
+            "Reset Translation States": "Сбросить состояния перевода",
+            "Reset Notifications": "Сбросить уведомления",
+            "Crash": "Вызвать сбой",
+            "Reload Saved Messages": "Перезагрузить сохранённые сообщения",
+            "Clear Database": "Очистить базу данных",
+            "Clear Database and Cache": "Очистить базу данных и кэш",
+            "Reset Holes": "Сбросить пропуски",
+            "Reset Tag Holes": "Сбросить пропуски тегов",
+            "Reindex Unread Counters": "Переиндексировать счётчики непрочитанного",
+            "Reset Cache Index [!]": "Сбросить индекс кэша [!]",
+            "Reindex Cache": "Переиндексировать кэш",
+            "Reset Biometrics Data": "Сбросить биометрические данные",
+            "Allow Web View Inspection": "Разрешить проверку WebView",
+            "Clear Web View Cache": "Очистить кэш WebView",
+            "Optimize Database": "Оптимизировать базу данных",
+            "Media Preview (Updated)": "Предпросмотр медиа (обновлённый)",
+            "Knockout Wallpaper": "Прозрачные области обоев",
+            "Experimental Compatibility": "Экспериментальная совместимость",
+            "Debug Data Display": "Показывать отладочные данные",
+            "Fake glass": "Имитация стекла",
+            "Force clear glass": "Принудительно прозрачное стекло",
+            "Debug Ripple": "Отладка эффекта волны",
+            "Force Text Field v2": "Принудительно Text Field v2",
+            "Inline UI": "Встроенный интерфейс",
+            "Forum Tabs Debug": "Отладка вкладок форума",
+            "Effect Overrides": "Переопределения эффектов",
+            "Compressed Emoji Cache": "Сжатый кэш эмодзи",
+            "Check Serialized Data": "Проверять сериализованные данные",
+            "Enable Quick Reaction": "Включить быструю реакцию",
+            "Live Stream V2": "Прямые трансляции V2",
+            "[WIP] OS mic mute": "[В разработке] Системное отключение микрофона",
+            "Enable Updates": "Включить обновления",
+            "Local Translation": "Локальный перевод",
+            "Video Cropping Optimization": "Оптимизация обрезки видео",
+            "Network X [Restart App]": "Network X [перезапустить приложение]",
+            "Download X [Restart App]": "Download X [перезапустить приложение]",
+            "Restore Purchases": "Восстановить покупки",
+            "Disable Relogin Tokens": "Отключить токены повторного входа",
+        },
+        ("Debug", "Отладка"),
+    )
+    replace_once(
+        debug_controller,
+        'text: "Now restart the app"',
+        'text: nagramixDebugTitle(presentationData, "Now restart the app", "Теперь перезапустите приложение")',
+        "debug restart alert",
+    )
+    debug_text = debug_controller.read_text(encoding="utf-8")
+    secret_warning = 'ActionSheetTextItem(title: "All secret chats will be lost.")'
+    if debug_text.count(secret_warning) != 2:
+        raise SystemExit(f"Expected two Debug secret-chat warnings: {debug_controller}")
+    debug_controller.write_text(
+        debug_text.replace(
+            secret_warning,
+            'ActionSheetTextItem(title: nagramixDebugTitle(presentationData, "All secret chats will be lost.", "Все секретные чаты будут потеряны."))',
+        ),
+        encoding="utf-8",
+    )
+    localize_debug_file(
+        debug_ui / "DebugAccountsController.swift",
+        {
+            "Login to another account": "Войти в другой аккаунт",
+            "Production": "Основной сервер",
+            "Test": "Тестовый сервер",
+        },
+        ("Accounts", "Аккаунты"),
+    )
+
+    print("Applied NagramiX feature overlay, including Russian Debug UI")
