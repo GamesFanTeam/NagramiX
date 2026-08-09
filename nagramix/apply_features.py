@@ -60,19 +60,19 @@ def apply_features(source: Path) -> None:
     replace_once(
         model,
         """        return ProxySettings(enabled: false, servers: [], activeServer: nil, useForCalls: false)\n""",
-        """        return ProxySettings(enabled: false, servers: [], activeServer: nil, useForCalls: false, autoSwitchEnabled: false, autoSwitchInterval: 10)\n""",
+        """        return ProxySettings(enabled: false, servers: [], activeServer: nil, useForCalls: false, autoSwitchEnabled: false, autoSwitchInterval: 15)\n""",
         "proxy defaults",
     )
     replace_once(
         model,
         """    public init(enabled: Bool, servers: [ProxyServerSettings], activeServer: ProxyServerSettings?, useForCalls: Bool) {\n        self.enabled = enabled\n        self.servers = servers\n        self.activeServer = activeServer\n        self.useForCalls = useForCalls\n    }\n""",
-        """    public init(enabled: Bool, servers: [ProxyServerSettings], activeServer: ProxyServerSettings?, useForCalls: Bool, autoSwitchEnabled: Bool = false, autoSwitchInterval: Int32 = 10) {\n        self.enabled = enabled\n        self.servers = servers\n        self.activeServer = activeServer\n        self.useForCalls = useForCalls\n        self.autoSwitchEnabled = autoSwitchEnabled\n        self.autoSwitchInterval = autoSwitchInterval\n    }\n""",
+        """    public init(enabled: Bool, servers: [ProxyServerSettings], activeServer: ProxyServerSettings?, useForCalls: Bool, autoSwitchEnabled: Bool = false, autoSwitchInterval: Int32 = 15) {\n        self.enabled = enabled\n        self.servers = servers\n        self.activeServer = activeServer\n        self.useForCalls = useForCalls\n        self.autoSwitchEnabled = autoSwitchEnabled\n        self.autoSwitchInterval = autoSwitchInterval\n    }\n""",
         "proxy initializer",
     )
     replace_once(
         model,
         """        self.useForCalls = ((try? container.decode(Int32.self, forKey: \"useForCalls\")) ?? 0) != 0\n""",
-        """        self.useForCalls = ((try? container.decode(Int32.self, forKey: \"useForCalls\")) ?? 0) != 0\n        self.autoSwitchEnabled = ((try? container.decode(Int32.self, forKey: \"nagramixAutoSwitchEnabled\")) ?? 0) != 0\n        let decodedInterval = (try? container.decode(Int32.self, forKey: \"nagramixAutoSwitchInterval\")) ?? 10\n        self.autoSwitchInterval = [5, 10, 15, 30, 60].contains(decodedInterval) ? decodedInterval : 10\n""",
+        """        self.useForCalls = ((try? container.decode(Int32.self, forKey: \"useForCalls\")) ?? 0) != 0\n        self.autoSwitchEnabled = ((try? container.decode(Int32.self, forKey: \"nagramixAutoSwitchEnabled\")) ?? 0) != 0\n        let decodedInterval = (try? container.decode(Int32.self, forKey: \"nagramixAutoSwitchInterval\")) ?? 15\n        self.autoSwitchInterval = [15, 30, 60].contains(decodedInterval) ? decodedInterval : 15\n""",
         "proxy decoding",
     )
     replace_once(
@@ -84,7 +84,7 @@ def apply_features(source: Path) -> None:
     replace_once(
         model,
         """    public var effectiveActiveServer: ProxyServerSettings? {\n""",
-        """    public var validatedAutoSwitchInterval: Double {\n        return Double([5, 10, 15, 30, 60].contains(self.autoSwitchInterval) ? self.autoSwitchInterval : 10)\n    }\n\n    public var effectiveActiveServer: ProxyServerSettings? {\n""",
+        """    public var validatedAutoSwitchInterval: Double {\n        return Double([15, 30, 60].contains(self.autoSwitchInterval) ? self.autoSwitchInterval : 15)\n    }\n\n    public var effectiveActiveServer: ProxyServerSettings? {\n""",
         "validated interval",
     )
 
@@ -168,7 +168,7 @@ def apply_features(source: Path) -> None:
     replace_once(
         ui,
         """    }, shareProxyList: {\n""",
-        """    }, toggleAutoSwitch: { value in\n        let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in\n            var current = current\n            current.autoSwitchEnabled = value && current.servers.count > 1\n            return current\n        }).start()\n    }, selectNextAutoSwitchInterval: {\n        let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in\n            var current = current\n            let values: [Int32] = [5, 10, 15, 30, 60]\n            let index = values.firstIndex(of: current.autoSwitchInterval) ?? 1\n            current.autoSwitchInterval = values[(index + 1) % values.count]\n            return current\n        }).start()\n    }, shareProxyList: {\n""",
+        """    }, toggleAutoSwitch: { value in\n        let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in\n            var current = current\n            current.autoSwitchEnabled = value && current.servers.count > 1\n            return current\n        }).start()\n    }, selectNextAutoSwitchInterval: {\n        let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in\n            var current = current\n            let values: [Int32] = [15, 30, 60]\n            let index = values.firstIndex(of: current.autoSwitchInterval) ?? -1\n            current.autoSwitchInterval = values[(index + 1) % values.count]\n            return current\n        }).start()\n    }, shareProxyList: {\n""",
         "proxy UI actions",
     )
 
