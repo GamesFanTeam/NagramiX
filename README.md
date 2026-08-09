@@ -1,27 +1,55 @@
 # NagramiX
 
-NagramiX is an independent, unofficial Telegram client for iOS. The project uses
-[Telegram-iOS](https://github.com/TelegramMessenger/Telegram-iOS) as its source
-base and ports selected ideas from
-[NagramX](https://github.com/risin42/NagramX) as native iOS features.
+**NagramiX** — независимый неофициальный клиент Telegram для iOS.
 
-The bootstrap is intentionally an overlay instead of a fork containing hundreds
-of thousands of upstream files. CI checks out a pinned Telegram-iOS revision,
-applies the small NagramiX layer, builds an arm64 device application without an
-Apple certificate, and packages `NagramiX.ipa` for later signing by SideStore.
+Проект использует [Telegram-iOS](https://github.com/TelegramMessenger/Telegram-iOS) в качестве исходной кодовой базы и переносит отдельные идеи и возможности из [NagramX](https://github.com/risin42/NagramX), реализуя их как нативные функции для iOS.
 
-## Bootstrap status
+Репозиторий намеренно построен по принципу **overlay**, а не как полноценный форк Telegram-iOS с сотнями тысяч upstream-файлов.
 
-- Upstream application version: Telegram-iOS 12.9.2 (`master`, pinned in
-  `nagramix/upstream.env`)
-- Android feature reference: NagramX tag `1258` / 12.9.2
-- Native build-time Bundle ID: `com.gamesfanteam.nagramix`
-- Signing assets: none stored in this repository
-- Output: unsigned `NagramiX.ipa` GitHub Actions artifact
+Во время сборки CI:
 
-The first workflow run requires repository secrets `TELEGRAM_API_ID` and
-`TELEGRAM_API_HASH`, obtained for this app at <https://my.telegram.org/apps>.
-These are Telegram API credentials, not Apple signing credentials.
+1. загружает зафиксированную ревизию Telegram-iOS;
+2. применяет поверх неё небольшой слой изменений NagramiX;
+3. собирает приложение для реального iOS-устройства с архитектурой `arm64` без Apple-сертификата;
+4. упаковывает результат в `NagramiX.ipa` для последующей подписи и установки через SideStore.
 
-See [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md) for the implementation plan, risks,
-and SideStore test checklist.
+## Текущее состояние bootstrap
+
+* Базовая версия приложения: **Telegram-iOS 12.9.2**
+* Ветка upstream: `master`
+* Зафиксированная ревизия хранится в `nagramix/upstream.env`
+* Android-референс возможностей: **NagramX tag `1258` / 12.9.2**
+* Bundle ID при нативной сборке: `com.gamesfanteam.nagramix`
+* Apple-сертификаты и другие signing-данные в репозитории **не хранятся**
+* Результат сборки: неподписанный `NagramiX.ipa` в артефактах GitHub Actions
+
+## Telegram API
+
+Перед первым запуском workflow необходимо добавить в **GitHub Actions Secrets** репозитория:
+
+* `TELEGRAM_API_ID`
+* `TELEGRAM_API_HASH`
+
+Получить их необходимо для приложения NagramiX на:
+
+https://my.telegram.org/apps
+
+Это учётные данные **Telegram API**, а не сертификаты или данные для подписи Apple.
+
+## Сборка и установка
+
+GitHub Actions автоматически подготавливает неподписанный файл:
+
+`NagramiX.ipa`
+
+После завершения сборки IPA можно скачать из артефактов workflow, подписать и установить на устройство через **SideStore**.
+
+## Документация
+
+Подробный план реализации, известные риски bootstrap-процесса и чек-лист тестирования через SideStore находятся в:
+
+[`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md)
+
+---
+
+> NagramiX является независимым неофициальным проектом и не связан с Telegram Messenger Inc.
