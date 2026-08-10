@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the pinned NagramiX 0.1.4 feature overlay."""
+"""Apply the pinned NagramiX 0.1.5 feature overlay."""
 
 from __future__ import annotations
 
@@ -13,8 +13,19 @@ def replace_once(path: Path, old: str, new: str, label: str) -> None:
     new = new.replace("\n+", "\n")
     text = path.read_text(encoding="utf-8")
     if old not in text:
-        raise SystemExit(f"Pinned 0.1.4 patch anchor was not found ({label}): {path}")
+        raise SystemExit(f"Pinned 0.1.5 patch anchor was not found ({label}): {path}")
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def replace_exact_count(path: Path, old: str, new: str, expected_count: int, label: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    actual_count = text.count(old)
+    if actual_count != expected_count:
+        raise SystemExit(
+            f"Pinned 0.1.5 patch anchor count mismatch ({label}): "
+            f"expected {expected_count}, found {actual_count}: {path}"
+        )
+    path.write_text(text.replace(old, new), encoding="utf-8")
 
 
 def localize_debug_file(path: Path, translations: dict[str, str], screen_title: tuple[str, str]) -> None:
@@ -60,6 +71,58 @@ def apply_features(source: Path) -> None:
     coordinator_source = overlay / "Sources" / "ProxyAutoSwitchCoordinator.swift"
     coordinator_target = source / "submodules" / "TelegramCore" / "Sources" / "Settings" / coordinator_source.name
     shutil.copy2(coordinator_source, coordinator_target)
+
+    splash_controller = source / "submodules" / "AuthorizationUI" / "Sources" / "AuthorizationSequenceSplashController.swift"
+    replace_once(
+        splash_controller,
+        """    private let startButton: SolidRoundedButtonNode\n""",
+        """    private let startButton: SolidRoundedButtonNode\n    private var nagramixLogoView: UIImageView?\n""",
+        "NagramiX intro logo property",
+    )
+    replace_once(
+        splash_controller,
+        """        self.startButton = SolidRoundedButtonNode(title: "Start Messaging", theme: SolidRoundedButtonTheme(theme: theme), glass: false, height: 50.0, cornerRadius: 50.0 * 0.5, isShimmering: true)\n""",
+        """        self.startButton = SolidRoundedButtonNode(title: "Начать общение", theme: SolidRoundedButtonTheme(theme: theme), glass: false, height: 50.0, cornerRadius: 50.0 * 0.5, isShimmering: true)\n""",
+        "Russian NagramiX intro button",
+    )
+    replace_once(
+        splash_controller,
+        """        self.controller.startMessaging = { [weak self] in\n            self?.activateLocalization("en")\n        }\n""",
+        """        self.controller.startMessaging = { [weak self] in\n            self?.activateLocalization("ru")\n        }\n""",
+        "Russian first-launch localization",
+    )
+    replace_once(
+        splash_controller,
+        """        self.startButton.pressed = { [weak self] in\n            self?.activateLocalization("en")\n        }\n""",
+        """        self.startButton.pressed = { [weak self] in\n            self?.activateLocalization("ru")\n        }\n""",
+        "Russian first-launch button localization",
+    )
+    replace_once(
+        splash_controller,
+        """            self.displayNode.view.addSubview(self.controller.view)\n            if let layout = self.validLayout {\n""",
+        """            self.displayNode.view.addSubview(self.controller.view)\n            if self.nagramixLogoView == nil, let image = UIImage(named: "NagramiX-Intro") {\n                let imageView = UIImageView(image: image)\n                imageView.contentMode = .scaleAspectFit\n                imageView.isUserInteractionEnabled = false\n                self.controller.view.addSubview(imageView)\n                self.nagramixLogoView = imageView\n            }\n            if let layout = self.validLayout {\n                if let logoView = self.nagramixLogoView {\n                    let logoSide = min(320.0, max(180.0, layout.size.width - 64.0))\n                    let logoY = max(layout.safeInsets.top + 12.0, 36.0)\n                    logoView.frame = CGRect(x: floor((layout.size.width - logoSide) * 0.5), y: logoY, width: logoSide, height: logoSide)\n                    self.controller.view.bringSubviewToFront(logoView)\n                }\n""",
+        "NagramiX intro logo setup",
+    )
+    replace_once(
+        splash_controller,
+        """    var animationSnapshot: UIView? {\n        return self.controller.createAnimationSnapshot()\n    }\n""",
+        """    var animationSnapshot: UIView? {\n        if let logoView = self.nagramixLogoView, let snapshot = logoView.snapshotView(afterScreenUpdates: false) {\n            snapshot.frame = logoView.frame\n            return snapshot\n        }\n        return self.controller.createAnimationSnapshot()\n    }\n""",
+        "NagramiX intro logo transition snapshot",
+    )
+    replace_once(
+        splash_controller,
+        """        let controllerFrame = CGRect(origin: CGPoint(), size: layout.size)\n        self.controller.defaultFrame = controllerFrame\n""",
+        """        let controllerFrame = CGRect(origin: CGPoint(), size: layout.size)\n        self.controller.defaultFrame = controllerFrame\n        if let logoView = self.nagramixLogoView {\n            let logoSide = min(320.0, max(180.0, layout.size.width - 64.0))\n            let logoY = max(layout.safeInsets.top + 12.0, 36.0)\n            logoView.frame = CGRect(x: floor((layout.size.width - logoSide) * 0.5), y: logoY, width: logoSide, height: logoSide)\n            self.controller.view.bringSubviewToFront(logoView)\n        }\n""",
+        "NagramiX intro logo layout",
+    )
+
+    intro_controller = source / "submodules" / "RMIntro" / "Sources" / "platform" / "ios" / "RMIntroViewController.m"
+    replace_once(
+        intro_controller,
+        """        _headlines = @[ _englishStrings[@"Tour.Title1"], _englishStrings[@"Tour.Title2"],  _englishStrings[@"Tour.Title6"], _englishStrings[@"Tour.Title3"], _englishStrings[@"Tour.Title4"], _englishStrings[@"Tour.Title5"]];\n        _descriptions = @[_englishStrings[@"Tour.Text1"], _englishStrings[@"Tour.Text2"],  _englishStrings[@"Tour.Text6"], _englishStrings[@"Tour.Text3"], _englishStrings[@"Tour.Text4"], _englishStrings[@"Tour.Text5"]];\n""",
+        """        _headlines = @[ @"NagramiX", @"Быстро", @"Расширенно", @"Мощно", @"Безопасно", @"Облачно" ];\n        _descriptions = @[\n            @"Расширенный Telegram-клиент для iOS.\\nБыстро, бесплатно и безопасно.",\n            @"Сообщения доставляются быстро даже при слабом соединении.",\n            @"Дополнительные настройки позволяют управлять приложением по своим правилам.",\n            @"Отправляйте сообщения, фотографии, видео и файлы.",\n            @"Ваши сообщения защищены средствами Telegram.",\n            @"Получайте доступ к чатам со всех своих устройств."\n        ];\n""",
+        "Russian NagramiX intro texts",
+    )
 
     model = source / "submodules" / "TelegramCore" / "Sources" / "SyncCore" / "SyncCore_ProxySettings.swift"
     replace_once(
@@ -335,6 +398,180 @@ def apply_features(source: Path) -> None:
         """        var controllers: [ViewController] = []\n+        if UserDefaults.standard.bool(forKey: "nagramix.showContactsTab"), let contactsController = self.contactsController {\n+            controllers.append(contactsController)\n+        }\n+        if UserDefaults.standard.bool(forKey: "nagramix.showCallsTab"), let callListController = self.callListController {\n+            controllers.append(callListController)\n+        }\n+        controllers.append(self.chatListController!)\n""",
         "updated NagramiX root tabs",
     )
+    replace_once(
+        root_controller,
+        """        tabBarController.setControllers(controllers, selectedIndex: restoreSettignsController != nil ? (controllers.count - 1) : (controllers.count - 2))
+""",
+        """        let showNagramiXTabNames = UserDefaults.standard.object(forKey: "nagramix.showTabNames") == nil || UserDefaults.standard.bool(forKey: "nagramix.showTabNames")
+        contactsController.tabBarItem.title = showNagramiXTabNames ? self.presentationData.strings.Contacts_Title : nil
+        callListController.tabBarItem.title = showNagramiXTabNames ? self.presentationData.strings.Calls_TabTitle : nil
+        chatListController.tabBarItem.title = showNagramiXTabNames ? self.presentationData.strings.DialogList_Title : nil
+        accountSettingsController.tabBarItem.title = showNagramiXTabNames ? self.presentationData.strings.Settings_Title : nil
+        tabBarController.setControllers(controllers, selectedIndex: restoreSettignsController != nil ? (controllers.count - 1) : (controllers.count - 2))
+        tabBarController.updateIsTabBarHidden(UserDefaults.standard.bool(forKey: "nagramix.hideTabBar"), transition: .immediate)
+
+""",
+        "NagramiX initial tab bar appearance",
+    )
+    replace_once(
+        root_controller,
+        """        controllers.append(self.accountSettingsController!)
+""",
+        """        controllers.append(self.accountSettingsController!)
+
+        let showNagramiXTabNames = UserDefaults.standard.object(forKey: "nagramix.showTabNames") == nil || UserDefaults.standard.bool(forKey: "nagramix.showTabNames")
+        self.contactsController?.tabBarItem.title = showNagramiXTabNames ? self.presentationData.strings.Contacts_Title : nil
+        self.callListController?.tabBarItem.title = showNagramiXTabNames ? self.presentationData.strings.Calls_TabTitle : nil
+        self.chatListController?.tabBarItem.title = showNagramiXTabNames ? self.presentationData.strings.DialogList_Title : nil
+        self.accountSettingsController?.tabBarItem.title = showNagramiXTabNames ? self.presentationData.strings.Settings_Title : nil
+""",
+        "NagramiX live tab bar appearance",
+    )
+    replace_once(
+        root_controller,
+        """        rootTabController.setControllers(controllers, selectedIndex: nil)
+""",
+        """        rootTabController.setControllers(controllers, selectedIndex: nil)
+        rootTabController.updateIsTabBarHidden(UserDefaults.standard.bool(forKey: "nagramix.hideTabBar"), transition: .animated(duration: 0.25, curve: .easeInOut))
+""",
+        "NagramiX live tab bar visibility",
+    )
+
+    chat_list_controller_node = source / "submodules" / "ChatListUI" / "Sources" / "ChatListControllerNode.swift"
+    replace_once(
+        chat_list_controller_node,
+        """            if let controller = self.controller, let storySubscriptions = controller.orderedStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+                effectiveStorySubscriptions = controller.orderedStorySubscriptions
+""",
+        """            if !UserDefaults.standard.bool(forKey: "nagramix.hideStories"), let controller = self.controller, let storySubscriptions = controller.orderedStorySubscriptions, shouldDisplayStoriesInChatListHeader(storySubscriptions: storySubscriptions, isHidden: controller.location == .chatList(groupId: .archive)) {
+                effectiveStorySubscriptions = controller.orderedStorySubscriptions
+""",
+        "hide stories in chat list header",
+    )
+    replace_once(
+        chat_list_controller_node,
+        """                search: ChatListNavigationBar.Search(isEnabled: true),
+""",
+        """                search: ChatListNavigationBar.Search(isEnabled: UserDefaults.standard.object(forKey: "nagramix.showSearchButton") == nil || UserDefaults.standard.bool(forKey: "nagramix.showSearchButton")),
+""",
+        "NagramiX search button visibility",
+    )
+    replace_once(
+        chat_list_controller_node,
+        """                if case .compact = layout.metrics.widthClass, self.controller?.isStoryPostingAvailable == true && !(self.context.sharedContext.callManager?.hasActiveCall ?? false) {
+""",
+        """                if case .compact = layout.metrics.widthClass, !UserDefaults.standard.bool(forKey: "nagramix.disableStoryCameraSwipe"), self.controller?.isStoryPostingAvailable == true && !(self.context.sharedContext.callManager?.hasActiveCall ?? false) {
+""",
+        "disable swipe to story camera",
+    )
+
+    chat_list_controller = source / "submodules" / "ChatListUI" / "Sources" / "ChatListController.swift"
+    replace_once(
+        chat_list_controller,
+        """            var resolvedItems = filterItems
+            if case .chatList(.root) = strongSelf.location {
+            } else {
+                resolvedItems = []
+            }
+""",
+        """            var resolvedItems = filterItems
+            if case .chatList(.root) = strongSelf.location {
+            } else {
+                resolvedItems = []
+            }
+            if UserDefaults.standard.bool(forKey: "nagramix.hideAllChatsFolder"), resolvedItems.contains(where: { entry in
+                if case .filter = entry {
+                    return true
+                }
+                return false
+            }) {
+                resolvedItems.removeAll(where: { entry in
+                    if case .all = entry {
+                        return true
+                    }
+                    return false
+                })
+            }
+""",
+        "hide All Chats folder when custom folders exist",
+    )
+    replace_once(
+        chat_list_controller,
+        """            var selectedEntryId = !strongSelf.initializedFilters ? firstItemEntryId : strongSelf.chatListDisplayNode.mainContainerNode.currentItemFilter
+            var resetCurrentEntry = false
+""",
+        """            var selectedEntryId = !strongSelf.initializedFilters ? firstItemEntryId : strongSelf.chatListDisplayNode.mainContainerNode.currentItemFilter
+            if !strongSelf.initializedFilters, UserDefaults.standard.bool(forKey: "nagramix.openLastChatFolder") {
+                let key = "nagramix.lastChatFolder.\\(strongSelf.context.account.peerId.toInt64())"
+                if let storedId = UserDefaults.standard.object(forKey: key) as? NSNumber {
+                    let restoredId: ChatListFilterTabEntryId = .filter(storedId.int32Value)
+                    if resolvedItems.contains(where: { $0.id == restoredId }) {
+                        selectedEntryId = restoredId
+                    }
+                }
+            }
+            var resetCurrentEntry = false
+""",
+        "restore last chat folder per account",
+    )
+    replace_once(
+        chat_list_controller,
+        """                } else {
+                    selectedEntryId = .all
+                }
+            }
+            let filtersLimit = isPremium == false ? limits.maxFoldersCount : nil
+""",
+        """                } else {
+                    selectedEntryId = .all
+                }
+            }
+            if !resolvedItems.contains(where: { $0.id == selectedEntryId }), let firstResolvedItem = resolvedItems.first {
+                selectedEntryId = firstResolvedItem.id
+            }
+            let filtersLimit = isPremium == false ? limits.maxFoldersCount : nil
+""",
+        "safe fallback for hidden All Chats folder",
+    )
+    replace_once(
+        chat_list_controller,
+        """                    case .allChats:
+                        hasAllChats = true
+                        if let isPremium = isPremium, !isPremium && availableFilters.count > 0 {
+""",
+        """                    case .allChats:
+                        hasAllChats = true
+                        if UserDefaults.standard.bool(forKey: "nagramix.hideAllChatsFolder"), items.contains(where: { item in
+                            if case .filter = item.0 {
+                                return true
+                            }
+                            return false
+                        }) {
+                            break
+                        }
+                        if let isPremium = isPremium, !isPremium && availableFilters.count > 0 {
+""",
+        "remove All Chats from available filters",
+    )
+    replace_once(
+        chat_list_controller_node,
+        """        self.currentItemStateValue.set(itemNode.listNode.state |> map { state in
+            let filterId: Int32?
+""",
+        """        if UserDefaults.standard.bool(forKey: "nagramix.openLastChatFolder") {
+            let key = "nagramix.lastChatFolder.\\(self.context.account.peerId.toInt64())"
+            switch id {
+            case .all:
+                UserDefaults.standard.removeObject(forKey: key)
+            case let .filter(filterId):
+                UserDefaults.standard.set(filterId, forKey: key)
+            }
+        }
+        self.currentItemStateValue.set(itemNode.listNode.state |> map { state in
+            let filterId: Int32?
+""",
+        "persist last chat folder per account",
+    )
 
     chat_list_node = source / "submodules" / "ChatListUI" / "Sources" / "Node" / "ChatListNode.swift"
     replace_once(
@@ -431,13 +668,84 @@ def apply_features(source: Path) -> None:
         """    let birthdayContextAction: (ASDisplayNode, ContextGesture?, CGPoint?) -> Void = { node, gesture, _ in\n+        interaction.openBirthdayContextMenu(node, gesture)\n+    }\n+    \n+    if UserDefaults.standard.bool(forKey: "nagramix.showPeerIds"), let peer = data.peer {\n+        items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 900, label: "ID", text: "\\(peer.id.toInt64())", textColor: .accent, action: { _, _ in\n+            UIPasteboard.general.string = "\\(peer.id.toInt64())"\n+        }, requestLayout: { animated in\n+            interaction.requestLayout(animated)\n+        }))\n+        if let resource = peer.profileImageRepresentations.first?.resource as? CloudPeerPhotoSizeMediaResource {\n+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 901, label: "DC", text: "\\(resource.datacenterId)", textColor: .accent, action: nil, requestLayout: { animated in\n+                interaction.requestLayout(animated)\n+            }))\n+        }\n+    }\n+    \n+    if case let .user(user) = data.peer {\n""",
         "profile id and avatar datacenter",
     )
+    replace_once(
+        peer_profile_items,
+        """    if UserDefaults.standard.bool(forKey: "nagramix.showPeerIds"), let peer = data.peer {
+        items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 900, label: "ID", text: "\\(peer.id.toInt64())", textColor: .accent, action: { _, _ in
+            UIPasteboard.general.string = "\\(peer.id.toInt64())"
+        }, requestLayout: { animated in
+            interaction.requestLayout(animated)
+        }))
+        if let resource = peer.profileImageRepresentations.first?.resource as? CloudPeerPhotoSizeMediaResource {
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 901, label: "DC", text: "\\(resource.datacenterId)", textColor: .accent, action: nil, requestLayout: { animated in
+                interaction.requestLayout(animated)
+            }))
+        }
+    }
+""",
+        """    if UserDefaults.standard.bool(forKey: "nagramix.showPeerIds"), let peer = data.peer {
+        items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 900, label: "ID", text: "\\(peer.id.toInt64())", textColor: .accent, action: { _, _ in
+            UIPasteboard.general.string = "\\(peer.id.toInt64())"
+        }, requestLayout: { animated in
+            interaction.requestLayout(animated)
+        }))
+        if let resource = peer.profileImageRepresentations.first?.resource as? CloudPeerPhotoSizeMediaResource {
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 901, label: "DC", text: "\\(resource.datacenterId)", textColor: .accent, action: nil, requestLayout: { animated in
+                interaction.requestLayout(animated)
+            }))
+        }
+    }
+    if UserDefaults.standard.bool(forKey: "nagramix.showChatCreationDate"), let peer = data.peer {
+        let creationDate: Int32?
+        switch peer {
+        case let .channel(channel):
+            creationDate = channel.creationDate
+        case let .legacyGroup(group):
+            creationDate = group.creationDate
+        default:
+            creationDate = nil
+        }
+        if let creationDate, creationDate > 0 {
+            let dateText = stringForMediumDate(timestamp: creationDate, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, withTime: false)
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 902, label: "Дата создания", text: dateText, textColor: .accent, action: nil, requestLayout: { animated in
+                interaction.requestLayout(animated)
+            }))
+        }
+    }
+""",
+        "exact group and channel creation date",
+    )
 
     video_message_camera = source / "submodules" / "TelegramUI" / "Components" / "VideoMessageCameraScreen" / "Sources" / "VideoMessageCameraScreen.swift"
     replace_once(
         video_message_camera,
         """            let isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: true)\n            let isFrontPosition = "".isEmpty\n""",
-        """            let isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: true)\n+            let isFrontPosition = !UserDefaults.standard.bool(forKey: "nagramix.preferBackCamera")\n""",
+        """            let isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: true)\n+            let preferBackCamera = UserDefaults.standard.object(forKey: "nagramix.preferBackCamera") == nil || UserDefaults.standard.bool(forKey: "nagramix.preferBackCamera")\n+            let isFrontPosition = !preferBackCamera\n""",
         "video message default camera",
+    )
+
+    call_manager = source / "submodules" / "TelegramCallsUI" / "Sources" / "PresentationCallManager.swift"
+    replace_exact_count(
+        call_manager,
+        "enableTCP: experimentalSettings.enableVoipTcp,",
+        "enableTCP: experimentalSettings.enableVoipTcp || UserDefaults.standard.bool(forKey: \"nagramix.forceTcpCalls\"),",
+        3,
+        "force TCP for VoIP calls",
+    )
+
+    chat_text_input_panel = source / "submodules" / "TelegramUI" / "Components" / "Chat" / "ChatTextInputPanelNode" / "Sources" / "ChatTextInputPanelNode.swift"
+    replace_once(
+        chat_text_input_panel,
+        """    public func chatInputTextNodeShouldReturn(modifierFlags: UIKeyModifierFlags) -> Bool {
+        var shouldSendMessage = false
+""",
+        """    public func chatInputTextNodeShouldReturn(modifierFlags: UIKeyModifierFlags) -> Bool {
+        if !UserDefaults.standard.bool(forKey: "nagramix.sendWithEnter") || modifierFlags.contains(.shift) {
+            return true
+        }
+        var shouldSendMessage = false
+""",
+        "send message with hardware Enter",
     )
 
     chat_list_item = source / "submodules" / "ChatListUI" / "Sources" / "Node" / "ChatListItem.swift"
@@ -506,6 +814,96 @@ def apply_features(source: Path) -> None:
         """                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuSelect, icon: { theme in\n                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Select"), color: theme.actionSheet.primaryTextColor)\n                }, action: { _, f in\n                    interfaceInteraction.beginMessageSelection(selectAll ? messages.map { $0.id } : [message.id], { transition in\n                        f(.custom(transition))\n                    })\n                })))\n            }\n""",
         """                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuSelect, icon: { theme in\n+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Select"), color: theme.actionSheet.primaryTextColor)\n+                }, action: { _, f in\n+                    interfaceInteraction.beginMessageSelection(selectAll ? messages.map { $0.id } : [message.id], { transition in\n+                        f(.custom(transition))\n+                    })\n+                })))\n+                if let authorId = message.author?.id {\n+                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.baseLanguageCode == "ru" ? "Выбрать от" : "Select from Author", icon: { theme in\n+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/SelectAll"), color: theme.actionSheet.primaryTextColor)\n+                    }, action: { _, f in\n+                        interfaceInteraction.selectMessagesFromAuthor(authorId)\n+                        f(.dismissWithoutContent)\n+                    })))\n+                }\n+            }\n""",
         "select from author menu action",
+    )
+    replace_once(
+        context_menus,
+        """                let isRussian = chatPresentationInterfaceState.strings.baseLanguageCode == "ru"
+                actions.append(.action(ContextMenuActionItem(text: isRussian ? "Переслать" : "Forward without Author", icon: { theme in
+""",
+        """                let isRussian = chatPresentationInterfaceState.strings.baseLanguageCode == "ru"
+                if UserDefaults.standard.object(forKey: "nagramix.contextForwardWithoutAuthor") == nil || UserDefaults.standard.bool(forKey: "nagramix.contextForwardWithoutAuthor") {
+                    actions.append(.action(ContextMenuActionItem(text: isRussian ? "Переслать" : "Forward without Author", icon: { theme in
+""",
+        "forward without author setting",
+    )
+    replace_once(
+        context_menus,
+        """                    f(.dismissWithoutContent)
+                })))
+                actions.append(.action(ContextMenuActionItem(text: isRussian ? "Переслать от" : "Forward with Author", icon: { theme in
+""",
+        """                    f(.dismissWithoutContent)
+                    })))
+                }
+                if UserDefaults.standard.object(forKey: "nagramix.contextForwardWithAuthor") == nil || UserDefaults.standard.bool(forKey: "nagramix.contextForwardWithAuthor") {
+                    actions.append(.action(ContextMenuActionItem(text: isRussian ? "Переслать от" : "Forward with Author", icon: { theme in
+""",
+        "forward with author setting",
+    )
+    replace_once(
+        context_menus,
+        """                    UserDefaults.standard.removeObject(forKey: "nagramix.forwardHideNamesOnce")
+                    interfaceInteraction.forwardMessages(selectAll || isImage ? messages : [message])
+                    f(.dismissWithoutContent)
+                })))
+                actions.append(.action(ContextMenuActionItem(text: isRussian ? "Сохранить в Избранное" : "Save to Saved Messages", icon: { theme in
+""",
+        """                    UserDefaults.standard.removeObject(forKey: "nagramix.forwardHideNamesOnce")
+                    interfaceInteraction.forwardMessages(selectAll || isImage ? messages : [message])
+                    f(.dismissWithoutContent)
+                    })))
+                }
+                if UserDefaults.standard.object(forKey: "nagramix.contextSaveToSaved") == nil || UserDefaults.standard.bool(forKey: "nagramix.contextSaveToSaved") {
+                    actions.append(.action(ContextMenuActionItem(text: isRussian ? "Сохранить в Избранное" : "Save to Saved Messages", icon: { theme in
+""",
+        "save to saved messages setting",
+    )
+    replace_once(
+        context_menus,
+        """                    controllerInteraction.displayUndo(.forward(savedMessages: true, text: chatPresentationInterfaceState.strings.Conversation_ForwardTooltip_SavedMessages_One))
+                    f(.dismissWithoutContent)
+                })))
+            }
+        }
+""",
+        """                    controllerInteraction.displayUndo(.forward(savedMessages: true, text: chatPresentationInterfaceState.strings.Conversation_ForwardTooltip_SavedMessages_One))
+                    f(.dismissWithoutContent)
+                    })))
+                }
+            }
+        }
+""",
+        "close save to saved messages setting",
+    )
+    replace_once(
+        context_menus,
+        """            if hasSavableAttachment {
+                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.baseLanguageCode == "ru" ? "Сохранить в Файлы" : "Save to Files", icon: { theme in
+""",
+        """            if hasSavableAttachment && (UserDefaults.standard.object(forKey: "nagramix.contextSaveToFiles") == nil || UserDefaults.standard.bool(forKey: "nagramix.contextSaveToFiles")) {
+                actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.baseLanguageCode == "ru" ? "Сохранить в Файлы" : "Save to Files", icon: { theme in
+""",
+        "save to files setting",
+    )
+    replace_once(
+        context_menus,
+        """                if let authorId = message.author?.id {
+                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.baseLanguageCode == "ru" ? "Выбрать от" : "Select from Author", icon: { theme in
+""",
+        """                if (UserDefaults.standard.object(forKey: "nagramix.contextSelectFromAuthor") == nil || UserDefaults.standard.bool(forKey: "nagramix.contextSelectFromAuthor")), let authorId = message.author?.id {
+                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.baseLanguageCode == "ru" ? "Выбрать от" : "Select from Author", icon: { theme in
+""",
+        "select from author setting",
+    )
+    replace_once(
+        context_menus,
+        """                if canTranslate {
+                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuTranslate, icon: { theme in
+""",
+        """                if canTranslate && (UserDefaults.standard.object(forKey: "nagramix.quickTranslate") == nil || UserDefaults.standard.bool(forKey: "nagramix.quickTranslate")) {
+                    actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuTranslate, icon: { theme in
+""",
+        "quick translate setting",
     )
 
     print("Applied NagramiX feature overlay, including Russian Debug UI")

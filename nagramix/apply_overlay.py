@@ -62,6 +62,12 @@ def main() -> None:
     if not replace_text(make_file, anchor, replacement):
         raise SystemExit("Pinned unsigned-build anchor was not found in Make.py")
 
+    # Bundle the branded first-launch artwork with the main application.
+    intro_source = Path(__file__).with_name("branding") / "intro" / "NagramiX-Intro.png"
+    intro_target = source / "Telegram" / "Telegram-iOS" / "Resources" / "NagramiX-Intro.png"
+    intro_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(intro_source, intro_target)
+
     # Replace the primary Icon Composer layer with the official NagramiX asset.
     # Icon Composer generates every required iPhone/iPad size during the build.
     icon_sources = Path(__file__).with_name("branding") / "icons"
