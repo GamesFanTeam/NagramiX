@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the pinned NagramiX 0.1.2 feature overlay."""
+"""Apply the isolated NagramiX 0.1.6 tabs and app-icon overlay."""
 
 from __future__ import annotations
 
@@ -10,137 +10,368 @@ from pathlib import Path
 def replace_once(path: Path, old: str, new: str, label: str) -> None:
     text = path.read_text(encoding="utf-8")
     if old not in text:
-        raise SystemExit(f"Pinned 0.1.2 patch anchor was not found ({label}): {path}")
+        raise SystemExit(f"Pinned 0.1.6 patch anchor was not found ({label}): {path}")
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
 def apply_features(source: Path) -> None:
     overlay = Path(__file__).resolve().parent
 
-    coordinator_source = overlay / "Sources" / "ProxyAutoSwitchCoordinator.swift"
-    coordinator_target = source / "submodules" / "TelegramCore" / "Sources" / "Settings" / coordinator_source.name
-    shutil.copy2(coordinator_source, coordinator_target)
+    core_source = overlay / "Sources" / "NagramiXCore"
+    core_target = source / "submodules" / "NagramiXCore"
+    if core_target.exists():
+        raise SystemExit(f"NagramiXCore already exists in the source tree: {core_target}")
+    shutil.copytree(core_source, core_target)
 
-    model = source / "submodules" / "TelegramCore" / "Sources" / "SyncCore" / "SyncCore_ProxySettings.swift"
+    settings_controller_source = overlay / "Sources" / "SettingsUI" / "NagramiXSettingsController.swift"
+    settings_controller_target = source / "submodules" / "SettingsUI" / "Sources" / settings_controller_source.name
+    shutil.copy2(settings_controller_source, settings_controller_target)
+
+    settings_build = source / "submodules" / "SettingsUI" / "BUILD"
     replace_once(
-        model,
-        """    public var activeServer: ProxyServerSettings?\n    public var useForCalls: Bool\n""",
-        """    public var activeServer: ProxyServerSettings?\n    public var useForCalls: Bool\n    public var autoSwitchEnabled: Bool\n    public var autoSwitchInterval: Int32\n""",
-        "proxy model properties",
-    )
-    replace_once(
-        model,
-        """        return ProxySettings(enabled: false, servers: [], activeServer: nil, useForCalls: false)\n""",
-        """        return ProxySettings(enabled: false, servers: [], activeServer: nil, useForCalls: false, autoSwitchEnabled: false, autoSwitchInterval: 10)\n""",
-        "proxy defaults",
-    )
-    replace_once(
-        model,
-        """    public init(enabled: Bool, servers: [ProxyServerSettings], activeServer: ProxyServerSettings?, useForCalls: Bool) {\n        self.enabled = enabled\n        self.servers = servers\n        self.activeServer = activeServer\n        self.useForCalls = useForCalls\n    }\n""",
-        """    public init(enabled: Bool, servers: [ProxyServerSettings], activeServer: ProxyServerSettings?, useForCalls: Bool, autoSwitchEnabled: Bool = false, autoSwitchInterval: Int32 = 10) {\n        self.enabled = enabled\n        self.servers = servers\n        self.activeServer = activeServer\n        self.useForCalls = useForCalls\n        self.autoSwitchEnabled = autoSwitchEnabled\n        self.autoSwitchInterval = autoSwitchInterval\n    }\n""",
-        "proxy initializer",
-    )
-    replace_once(
-        model,
-        """        self.useForCalls = ((try? container.decode(Int32.self, forKey: \"useForCalls\")) ?? 0) != 0\n""",
-        """        self.useForCalls = ((try? container.decode(Int32.self, forKey: \"useForCalls\")) ?? 0) != 0\n        self.autoSwitchEnabled = ((try? container.decode(Int32.self, forKey: \"nagramixAutoSwitchEnabled\")) ?? 0) != 0\n        let decodedInterval = (try? container.decode(Int32.self, forKey: \"nagramixAutoSwitchInterval\")) ?? 10\n        self.autoSwitchInterval = [5, 10, 15, 30, 60].contains(decodedInterval) ? decodedInterval : 10\n""",
-        "proxy decoding",
-    )
-    replace_once(
-        model,
-        """        try container.encode((self.useForCalls ? 1 : 0) as Int32, forKey: \"useForCalls\")\n""",
-        """        try container.encode((self.useForCalls ? 1 : 0) as Int32, forKey: \"useForCalls\")\n        try container.encode((self.autoSwitchEnabled ? 1 : 0) as Int32, forKey: \"nagramixAutoSwitchEnabled\")\n        try container.encode(self.autoSwitchInterval, forKey: \"nagramixAutoSwitchInterval\")\n""",
-        "proxy encoding",
-    )
-    replace_once(
-        model,
-        """    public var effectiveActiveServer: ProxyServerSettings? {\n""",
-        """    public var validatedAutoSwitchInterval: Double {\n        return Double([5, 10, 15, 30, 60].contains(self.autoSwitchInterval) ? self.autoSwitchInterval : 10)\n    }\n\n    public var effectiveActiveServer: ProxyServerSettings? {\n""",
-        "validated interval",
+        settings_build,
+        '        "//submodules/AccountContext:AccountContext",\n',
+        '        "//submodules/AccountContext:AccountContext",\n        "//submodules/NagramiXCore:NagramiXCore",\n',
+        "SettingsUI NagramiXCore dependency",
     )
 
-    account = source / "submodules" / "TelegramCore" / "Sources" / "Account" / "Account.swift"
+    telegram_ui_build = source / "submodules" / "TelegramUI" / "BUILD"
     replace_once(
-        account,
-        """        }))\n\n        if !supplementary {\n""",
-        """        }))\n        if !supplementary {\n            self.managedOperationsDisposable.add(ProxyAutoSwitchCoordinator(accountManager: accountManager, network: network))\n        }\n\n        if !supplementary {\n""",
-        "account proxy coordinator",
+        telegram_ui_build,
+        '        "//submodules/SettingsUI:SettingsUI",\n',
+        '        "//submodules/SettingsUI:SettingsUI",\n        "//submodules/NagramiXCore:NagramiXCore",\n',
+        "TelegramUI NagramiXCore dependency",
     )
 
-    ui = source / "submodules" / "SettingsUI" / "Sources" / "Data and Storage" / "ProxyListSettingsController.swift"
+    tab_bar_build = source / "submodules" / "TabBarUI" / "BUILD"
     replace_once(
-        ui,
-        """    let toggleUseForCalls: (Bool) -> Void\n    let shareProxyList: () -> Void\n""",
-        """    let toggleUseForCalls: (Bool) -> Void\n    let toggleAutoSwitch: (Bool) -> Void\n    let selectNextAutoSwitchInterval: () -> Void\n    let shareProxyList: () -> Void\n""",
-        "proxy UI arguments properties",
-    )
-    replace_once(
-        ui,
-        """    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void) {\n""",
-        """    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, toggleAutoSwitch: @escaping (Bool) -> Void, selectNextAutoSwitchInterval: @escaping () -> Void, shareProxyList: @escaping () -> Void) {\n""",
-        "proxy UI arguments initializer",
-    )
-    # Correct the remove-server closure type after expanding the initializer.
-    replace_once(
-        ui,
-        "removeServer: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void",
-        "removeServer: @escaping (ProxyServerSettings) -> Void",
-        "proxy UI remove closure type",
-    )
-    replace_once(
-        ui,
-        """        self.toggleUseForCalls = toggleUseForCalls\n        self.shareProxyList = shareProxyList\n""",
-        """        self.toggleUseForCalls = toggleUseForCalls\n        self.toggleAutoSwitch = toggleAutoSwitch\n        self.selectNextAutoSwitchInterval = selectNextAutoSwitchInterval\n        self.shareProxyList = shareProxyList\n""",
-        "proxy UI arguments assignments",
-    )
-    replace_once(ui, """    case share\n    case calls\n""", """    case share\n    case autoSwitch\n    case calls\n""", "proxy UI section")
-    replace_once(
-        ui,
-        """    case shareProxyList(PresentationTheme, String)\n    case useForCalls(PresentationTheme, String, Bool)\n""",
-        """    case shareProxyList(PresentationTheme, String)\n    case autoSwitch(PresentationTheme, String, Bool)\n    case autoSwitchInterval(PresentationTheme, String, String)\n    case autoSwitchInfo(PresentationTheme, String)\n    case useForCalls(PresentationTheme, String, Bool)\n""",
-        "proxy UI entries",
-    )
-    replace_once(
-        ui,
-        """            case .shareProxyList:\n                return ProxySettingsControllerSection.share.rawValue\n            case .useForCalls, .useForCallsInfo:\n""",
-        """            case .shareProxyList:\n                return ProxySettingsControllerSection.share.rawValue\n            case .autoSwitch, .autoSwitchInterval, .autoSwitchInfo:\n                return ProxySettingsControllerSection.autoSwitch.rawValue\n            case .useForCalls, .useForCallsInfo:\n""",
-        "proxy UI entry sections",
-    )
-    replace_once(
-        ui,
-        """            case .shareProxyList:\n                return .index(3)\n            case .useForCalls:\n                return .index(4)\n            case .useForCallsInfo:\n                return .index(5)\n""",
-        """            case .shareProxyList:\n                return .index(3)\n            case .autoSwitch:\n                return .index(4)\n            case .autoSwitchInterval:\n                return .index(5)\n            case .autoSwitchInfo:\n                return .index(6)\n            case .useForCalls:\n                return .index(7)\n            case .useForCallsInfo:\n                return .index(8)\n""",
-        "proxy UI stable ids",
-    )
-    replace_once(
-        ui,
-        """            case let .useForCalls(lhsTheme, lhsText, lhsValue):\n""",
-        """            case let .autoSwitch(lhsTheme, lhsText, lhsValue):\n                if case let .autoSwitch(rhsTheme, rhsText, rhsValue) = rhs, lhsTheme === rhsTheme, lhsText == rhsText, lhsValue == rhsValue {\n                    return true\n                } else {\n                    return false\n                }\n            case let .autoSwitchInterval(lhsTheme, lhsText, lhsValue):\n                if case let .autoSwitchInterval(rhsTheme, rhsText, rhsValue) = rhs, lhsTheme === rhsTheme, lhsText == rhsText, lhsValue == rhsValue {\n                    return true\n                } else {\n                    return false\n                }\n            case let .autoSwitchInfo(lhsTheme, lhsText):\n                if case let .autoSwitchInfo(rhsTheme, rhsText) = rhs, lhsTheme === rhsTheme, lhsText == rhsText {\n                    return true\n                } else {\n                    return false\n                }\n            case let .useForCalls(lhsTheme, lhsText, lhsValue):\n""",
-        "proxy UI equality",
-    )
-    replace_once(
-        ui,
-        """            case .useForCalls:\n                switch rhs {\n                    case .enabled, .serversHeader, .addServer, .server, .shareProxyList, .useForCalls:\n                        return false\n                    default:\n                        return true\n                }\n            case .useForCallsInfo:\n                return false\n""",
-        """            case .autoSwitch:\n                switch rhs {\n                    case .enabled, .serversHeader, .addServer, .server, .shareProxyList, .autoSwitch:\n                        return false\n                    default:\n                        return true\n                }\n            case .autoSwitchInterval:\n                switch rhs {\n                    case .enabled, .serversHeader, .addServer, .server, .shareProxyList, .autoSwitch, .autoSwitchInterval:\n                        return false\n                    default:\n                        return true\n                }\n            case .autoSwitchInfo:\n                switch rhs {\n                    case .useForCalls, .useForCallsInfo:\n                        return true\n                    default:\n                        return false\n                }\n            case .useForCalls:\n                switch rhs {\n                    case .useForCallsInfo:\n                        return true\n                    default:\n                        return false\n                }\n            case .useForCallsInfo:\n                return false\n""",
-        "proxy UI ordering",
-    )
-    replace_once(
-        ui,
-        """            case let .useForCalls(_, text, value):\n""",
-        """            case let .autoSwitch(_, text, value):\n                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: true, enabled: true, sectionId: self.section, style: .blocks, updated: { value in\n                    arguments.toggleAutoSwitch(value)\n                })\n            case let .autoSwitchInterval(_, text, value):\n                return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: nil, title: text, label: value, labelStyle: .text, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {\n                    arguments.selectNextAutoSwitchInterval()\n                })\n            case let .autoSwitchInfo(_, text):\n                return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)\n            case let .useForCalls(_, text, value):\n""",
-        "proxy UI row rendering",
-    )
-    replace_once(
-        ui,
-        """    if let activeServer = proxySettings.activeServer, case .socks5 = activeServer.connection {\n""",
-        """    if proxySettings.servers.count > 1 {\n        let isRussian = strings.baseLanguageCode == \"ru\"\n        entries.append(.autoSwitch(theme, isRussian ? \"Автопереключение прокси\" : \"Proxy Auto Switch\", proxySettings.autoSwitchEnabled))\n        if proxySettings.autoSwitchEnabled {\n            entries.append(.autoSwitchInterval(theme, isRussian ? \"Интервал проверки\" : \"Check Interval\", \"\\(Int(proxySettings.validatedAutoSwitchInterval)) \" + (isRussian ? \"сек.\" : \"sec\")))\n        }\n        entries.append(.autoSwitchInfo(theme, isRussian ? \"При потере соединения NagramiX проверит следующий сохранённый прокси. Исправный прокси не переключается.\" : \"When the connection is lost, NagramiX checks the next saved proxy. A healthy proxy is not rotated.\"))\n    }\n\n    if let activeServer = proxySettings.activeServer, case .socks5 = activeServer.connection {\n""",
-        "proxy UI rows",
-    )
-    replace_once(
-        ui,
-        """    }, shareProxyList: {\n""",
-        """    }, toggleAutoSwitch: { value in\n        let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in\n            var current = current\n            current.autoSwitchEnabled = value && current.servers.count > 1\n            return current\n        }).start()\n    }, selectNextAutoSwitchInterval: {\n        let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in\n            var current = current\n            let values: [Int32] = [5, 10, 15, 30, 60]\n            let index = values.firstIndex(of: current.autoSwitchInterval) ?? 1\n            current.autoSwitchInterval = values[(index + 1) % values.count]\n            return current\n        }).start()\n    }, shareProxyList: {\n""",
-        "proxy UI actions",
+        tab_bar_build,
+        '        "//submodules/Display",\n',
+        '        "//submodules/Display",\n        "//submodules/NagramiXCore:NagramiXCore",\n',
+        "TabBarUI NagramiXCore dependency",
     )
 
-    print("Applied NagramiX 0.1.2 proxy auto-switch feature overlay")
+    settings_items = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoScreen" / "Sources" / "PeerInfoSettingsItems.swift"
+    replace_once(
+        settings_items,
+        "    case myProfile\n    case proxy\n",
+        "    case myProfile\n    case nagramix\n    case proxy\n",
+        "NagramiX settings group order",
+    )
+    replace_once(
+        settings_items,
+        """        items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_MyProfile, icon: PresentationResourcesSettings.myProfile, action: {
+            interaction.openSettings(.profile)
+        }))
+""" + "        \n" + """        if !settings.proxySettings.servers.isEmpty {
+""",
+        """        items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_MyProfile, icon: PresentationResourcesSettings.myProfile, action: {
+            interaction.openSettings(.profile)
+        }))
+
+        items[.nagramix]!.append(PeerInfoScreenDisclosureItem(id: 0, text: "Настройки NagramiX", icon: PresentationResourcesSettings.appearance, action: {
+            interaction.openSettings(.nagramix)
+        }))
+""" + "        \n" + """        if !settings.proxySettings.servers.isEmpty {
+""",
+        "NagramiX settings row",
+    )
+
+    peer_info_screen = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoScreen" / "Sources" / "PeerInfoScreen.swift"
+    replace_once(
+        peer_info_screen,
+        "    case profile\n    case premiumManagement\n",
+        "    case profile\n    case nagramix\n    case premiumManagement\n",
+        "NagramiX settings route",
+    )
+
+    settings_actions = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoScreen" / "Sources" / "PeerInfoScreenSettingsActions.swift"
+    replace_once(
+        settings_actions,
+        """        case .stories:
+            push(PeerInfoStoryGridScreen(context: self.context, peerId: self.context.account.peerId, scope: .saved))
+""",
+        """        case .nagramix:
+            push(nagramiXSettingsController(context: self.context))
+        case .stories:
+            push(PeerInfoStoryGridScreen(context: self.context, peerId: self.context.account.peerId, scope: .saved))
+""",
+        "NagramiX settings navigation",
+    )
+
+    root_controller = source / "submodules" / "TelegramUI" / "Sources" / "TelegramRootController.swift"
+    replace_once(
+        root_controller,
+        "import SettingsUI\n",
+        "import SettingsUI\nimport NagramiXCore\n",
+        "Telegram root NagramiXCore import",
+    )
+    replace_once(
+        root_controller,
+        """    private var applicationInFocusDisposable: Disposable?
+    private var storyUploadEventsDisposable: Disposable?
+""",
+        """    private var applicationInFocusDisposable: Disposable?
+    private var storyUploadEventsDisposable: Disposable?
+    private var nagramiXTabSettingsObserver: NSObjectProtocol?
+    private var nagramiXOriginalTabTitles: [ObjectIdentifier: String] = [:]
+""",
+        "Telegram root tab settings state",
+    )
+    replace_once(
+        root_controller,
+        """        super.init(mode: .automaticMasterDetail, theme: NavigationControllerTheme(presentationTheme: self.presentationData.theme))
+""" + "        \n" + """        self.presentationDataDisposable = (context.sharedContext.presentationData
+""",
+        """        super.init(mode: .automaticMasterDetail, theme: NavigationControllerTheme(presentationTheme: self.presentationData.theme))
+
+        self.nagramiXTabSettingsObserver = NotificationCenter.default.addObserver(forName: NagramiXTabSettings.changedNotification, object: nil, queue: .main, using: { [weak self] _ in
+            self?.applyNagramiXTabSettings()
+        })
+""" + "        \n" + """        self.presentationDataDisposable = (context.sharedContext.presentationData
+""",
+        "Telegram root tab settings observer",
+    )
+    replace_once(
+        root_controller,
+        """        self.storyUploadEventsDisposable?.dispose()
+    }
+""",
+        """        self.storyUploadEventsDisposable?.dispose()
+        if let nagramiXTabSettingsObserver = self.nagramiXTabSettingsObserver {
+            NotificationCenter.default.removeObserver(nagramiXTabSettingsObserver)
+        }
+    }
+""",
+        "Telegram root observer cleanup",
+    )
+    replace_once(
+        root_controller,
+        """    public func addRootControllers(showCallsTab: Bool) {
+""",
+        """    private func nagramiXConfiguredControllers() -> [ViewController] {
+        let settings = NagramiXTabSettings.current
+        let possibleControllers: [ViewController?] = [self.contactsController, self.callListController, self.chatListController, self.accountSettingsController]
+        let allControllers: [ViewController] = possibleControllers.compactMap { $0 }
+
+        for controller in allControllers {
+            let identifier = ObjectIdentifier(controller)
+            if self.nagramiXOriginalTabTitles[identifier] == nil, let title = controller.tabBarItem.title {
+                self.nagramiXOriginalTabTitles[identifier] = title
+            }
+            controller.tabBarItem.title = settings.hideTitles ? "" : self.nagramiXOriginalTabTitles[identifier]
+        }
+
+        var controllers: [ViewController] = []
+        if !settings.hideContacts, let contactsController = self.contactsController {
+            controllers.append(contactsController)
+        }
+        if !settings.hideCalls, let callListController = self.callListController {
+            controllers.append(callListController)
+        }
+        if let chatListController = self.chatListController {
+            controllers.append(chatListController)
+        }
+        if let accountSettingsController = self.accountSettingsController {
+            controllers.append(accountSettingsController)
+        }
+        return controllers
+    }
+
+    private func applyNagramiXTabSettings() {
+        guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
+            return
+        }
+        rootTabController.setControllers(self.nagramiXConfiguredControllers(), selectedIndex: nil)
+        rootTabController.updateLayout(transition: .immediate)
+    }
+
+    public func addRootControllers(showCallsTab: Bool) {
+""",
+        "Telegram root tab settings helpers",
+    )
+    replace_once(
+        root_controller,
+        """        var controllers: [ViewController] = []
+""" + "        \n" + """        let contactsController = ContactsController(context: self.context)
+""",
+        """        let contactsController = ContactsController(context: self.context)
+""",
+        "Telegram root temporary controllers array",
+    )
+    replace_once(root_controller, "        controllers.append(contactsController)\n        \n", "", "Telegram root contacts default append")
+    replace_once(
+        root_controller,
+        """        if showCallsTab {
+            controllers.append(callListController)
+        }
+        controllers.append(chatListController)
+""" + "        \n",
+        "",
+        "Telegram root calls and chats default append",
+    )
+    replace_once(
+        root_controller,
+        """        accountSettingsController.parentController = self
+        controllers.append(accountSettingsController)
+""" + "                \n" + """        tabBarController.setControllers(controllers, selectedIndex: restoreSettignsController != nil ? (controllers.count - 1) : (controllers.count - 2))
+""" + "        \n" + """        self.contactsController = contactsController
+        self.callListController = callListController
+        self.chatListController = chatListController
+        self.accountSettingsController = accountSettingsController
+        self.rootTabController = tabBarController
+""",
+        """        accountSettingsController.parentController = self
+
+        self.contactsController = contactsController
+        self.callListController = callListController
+        self.chatListController = chatListController
+        self.accountSettingsController = accountSettingsController
+        self.rootTabController = tabBarController
+
+        let controllers = self.nagramiXConfiguredControllers()
+        let selectedController: ViewController = restoreSettignsController != nil ? accountSettingsController : chatListController
+        let selectedIndex = controllers.firstIndex(where: { $0 === selectedController }) ?? 0
+        tabBarController.setControllers(controllers, selectedIndex: selectedIndex)
+""",
+        "Telegram root initial NagramiX tabs",
+    )
+    replace_once(
+        root_controller,
+        """    public func updateRootControllers(showCallsTab: Bool) {
+        guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
+            return
+        }
+        var controllers: [ViewController] = []
+        controllers.append(self.contactsController!)
+        if showCallsTab {
+            controllers.append(self.callListController!)
+        }
+        controllers.append(self.chatListController!)
+        controllers.append(self.accountSettingsController!)
+""" + "        \n" + """        rootTabController.setControllers(controllers, selectedIndex: nil)
+    }
+""",
+        """    public func updateRootControllers(showCallsTab: Bool) {
+        self.applyNagramiXTabSettings()
+    }
+""",
+        "Telegram root updates",
+    )
+
+    tab_bar_node = source / "submodules" / "TabBarUI" / "Sources" / "TabBarContollerNode.swift"
+    replace_once(
+        tab_bar_node,
+        "import GlassControls\n",
+        "import GlassControls\nimport NagramiXCore\n",
+        "Tab bar NagramiXCore import",
+    )
+    replace_once(
+        tab_bar_node,
+        """                search: self.currentController?.tabBarSearchState.flatMap { tabBarSearchState in
+                    return TabBarComponent.Search(
+""",
+        """                search: NagramiXTabSettings.current.showSearchButton ? self.currentController?.tabBarSearchState.flatMap { tabBarSearchState in
+                    return TabBarComponent.Search(
+""",
+        "Tab bar search visibility",
+    )
+
+    app_delegate = source / "submodules" / "TelegramUI" / "Sources" / "AppDelegate.swift"
+    replace_once(
+        app_delegate,
+        """                var icons = [
+                    PresentationAppIcon(name: "BlueIcon", imageName: "BlueIcon", isDefault: buildConfig.isAppStoreBuild),
+                    PresentationAppIcon(name: "New2", imageName: "New2"),
+                    PresentationAppIcon(name: "New1", imageName: "New1"),
+                    PresentationAppIcon(name: "BlackIcon", imageName: "BlackIcon"),
+                    PresentationAppIcon(name: "BlueClassicIcon", imageName: "BlueClassicIcon"),
+                    PresentationAppIcon(name: "BlackClassicIcon", imageName: "BlackClassicIcon"),
+                    PresentationAppIcon(name: "BlueFilledIcon", imageName: "BlueFilledIcon"),
+                    PresentationAppIcon(name: "BlackFilledIcon", imageName: "BlackFilledIcon")
+                ]
+                if buildConfig.isInternalBuild {
+                    icons.append(PresentationAppIcon(name: "WhiteFilledIcon", imageName: "WhiteFilledIcon"))
+                }
+""" + "                \n" + """                icons.append(PresentationAppIcon(name: "Premium", imageName: "Premium", isPremium: true))
+                icons.append(PresentationAppIcon(name: "PremiumTurbo", imageName: "PremiumTurbo", isPremium: true))
+                icons.append(PresentationAppIcon(name: "PremiumBlack", imageName: "PremiumBlack", isPremium: true))
+""" + "                \n" + """                return icons
+""",
+        """                return [
+                    PresentationAppIcon(name: "NagramiX1", imageName: "NagramiX1", isDefault: true),
+                    PresentationAppIcon(name: "NagramiX2", imageName: "NagramiX2"),
+                    PresentationAppIcon(name: "NagramiX3", imageName: "NagramiX3"),
+                    PresentationAppIcon(name: "NagramiX4", imageName: "NagramiX4"),
+                    PresentationAppIcon(name: "NagramiX5", imageName: "NagramiX5"),
+                    PresentationAppIcon(name: "NagramiX6", imageName: "NagramiX6"),
+                    PresentationAppIcon(name: "NagramiX7", imageName: "NagramiX7"),
+                    PresentationAppIcon(name: "NagramiX8", imageName: "NagramiX8")
+                ]
+""",
+        "NagramiX app icon list",
+    )
+
+    icon_item = source / "submodules" / "SettingsUI" / "Sources" / "Themes" / "ThemeSettingsAppIconItem.swift"
+    replace_once(
+        icon_item,
+        """                                case "PremiumTurbo":
+                                    name = item.strings.Appearance_AppIconTurbo
+                                default:
+""",
+        """                                case "PremiumTurbo":
+                                    name = item.strings.Appearance_AppIconTurbo
+                                case "NagramiX1":
+                                    name = "NagramiX"
+                                case "NagramiX2":
+                                    name = "Закат"
+                                case "NagramiX3":
+                                    name = "Аврора"
+                                case "NagramiX4":
+                                    name = "Графит"
+                                case "NagramiX5":
+                                    name = "Янтарь"
+                                case "NagramiX6":
+                                    name = "Неон"
+                                case "NagramiX7":
+                                    name = "Лайм"
+                                case "NagramiX8":
+                                    name = "Рубин"
+                                default:
+""",
+        "NagramiX app icon display names",
+    )
+
+    telegram_build = source / "Telegram" / "BUILD"
+    replace_once(
+        telegram_build,
+        """alternate_icon_folders = [
+    "BlackIcon",
+    "BlackClassicIcon",
+    "BlackFilledIcon",
+    "BlueIcon",
+    "BlueClassicIcon",
+    "BlueFilledIcon",
+    "WhiteFilledIcon",
+    "New1",
+    "New2",
+    "Premium",
+    "PremiumBlack",
+    "PremiumTurbo",
+]
+""",
+        """alternate_icon_folders = [
+    "NagramiX1",
+    "NagramiX2",
+    "NagramiX3",
+    "NagramiX4",
+    "NagramiX5",
+    "NagramiX6",
+    "NagramiX7",
+    "NagramiX8",
+]
+""",
+        "NagramiX alternate icon build targets",
+    )
+
+    print("Applied isolated NagramiX 0.1.6 tabs and app-icon overlay")
