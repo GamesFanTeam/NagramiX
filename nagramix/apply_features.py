@@ -271,7 +271,10 @@ def apply_features(source: Path) -> None:
         """                search: self.currentController?.tabBarSearchState.flatMap { tabBarSearchState in
                     return TabBarComponent.Search(
 """,
-        """                search: NagramiXTabSettings.current.showSearchButton ? self.currentController?.tabBarSearchState.flatMap { tabBarSearchState in
+        """                search: self.currentController?.tabBarSearchState.flatMap { tabBarSearchState in
+                    guard NagramiXTabSettings.current.showSearchButton else {
+                        return nil
+                    }
                     return TabBarComponent.Search(
 """,
         "Tab bar search visibility",
