@@ -1,61 +1,66 @@
-# Bootstrap plan and risk map
+# План чистой базовой сборки NagramiX 0.1.6
 
-## Scope and upstream observations
+## Основа проекта
 
-Telegram-iOS is a Bazel-based Swift/Objective-C application. Its supported device
-build entry point is `build-system/Make/Make.py`, with `release_arm64` producing
-the iPhone build. The current `versions.json` reports application 12.9.2, Xcode
-26.2, Bazel 8.4.2 and macOS 26.
+NagramiX 0.1.6 создаётся на закреплённой ревизии Telegram-iOS 12.9.2.
 
-NagramX tag `1258` also identifies application version 12.9.2. It is an Android
-codebase and is used only as a behavior/design reference. No Android source is
-compiled or linked into NagramiX.
+Android-проект NagramX используется только как источник идей и описаний поведения.
 
-## Bootstrap phases
+Android-код не компилируется и не связывается с приложением для iOS.
 
-1. Keep the NagramiX-owned layer in `nagramix/`, `scripts/`, and `.github/`.
-2. Resolve pinned Telegram-iOS commit `6ad963e5b62d354da79040f388ae2b9132fb17b8`
-   in CI and verify version 12.9.2.
-3. Generate build configuration from repository secrets; never commit API hashes,
-   profiles, certificates, private keys, or Apple account data.
-4. Apply deterministic branding and native build-time identifier
-   `com.gamesfanteam.nagramix`.
-5. Generate build-only self-signed profiles for the native NagramiX identifier,
-   then build `release_arm64`. Disable extensions for the first launch/login
-   checkpoint to avoid unsupported entitlement groups.
-6. Remove residual signing material, verify that the compiled identifier is
-   already `com.gamesfanteam.nagramix`, and package `Payload/NagramiX.app` as
-   `NagramiX.ipa`.
-   Telegram's `--outputBuildArtifactsPath` option provides the deterministic
-   intermediate IPA path rather than relying on Bazel symlink traversal.
-7. Sign/install with SideStore and validate launch plus Telegram authorization.
-8. Only after the checkpoint passes, inventory NagramX 1258 features and port
-   them in isolated iOS modules by coherent feature groups.
+## Состав итерации
 
-## Risk map
+В эту сборку входят только:
 
-| Risk | Impact | Mitigation / gate |
+- базовый ребрендинг NagramiX;
+- отдельный Bundle ID `com.gamesfanteam.nagramix`;
+- восемь иконок NagramiX;
+- отдельная группа «Настройки NagramiX» после группы «Мой профиль»;
+- переключатель «Скрыть вкладку «Контакты»»;
+- переключатель «Скрыть вкладку «Звонки»»;
+- переключатель «Скрыть имена вкладок»;
+- переключатель «Показывать кнопку поиска».
+
+Функции экспериментальных сборок 0.1.2–0.1.5 не переносятся.
+
+## Значения по умолчанию
+
+- вкладка «Контакты» скрыта;
+- вкладка «Звонки» скрыта;
+- имена вкладок отображаются;
+- отдельная кнопка поиска скрыта;
+- широкая панель содержит только вкладки «Чаты» и «Настройки».
+
+## Этапы сборки
+
+1. GitHub Actions получает закреплённую ревизию Telegram-iOS.
+2. Проверяется версия исходного приложения 12.9.2.
+3. Из секретов репозитория создаётся временная конфигурация Telegram API.
+4. На чистое дерево исходников накладывается изолированный слой из каталога `nagramix/`.
+5. Для сборки создаются временные самоподписанные профили без сертификатов Apple.
+6. Собирается конфигурация `release_arm64` для физического iPhone.
+7. Из готового приложения удаляются временные подписи и профили.
+8. Создаётся файл `NagramiX-0.1.6-unsigned.ipa`.
+9. IPA проверяется и публикуется как артефакт сборки.
+
+## Карта рисков
+
+| Риск | Последствие | Мера контроля |
 |---|---|---|
-| GitHub runner image differs from required Xcode 26.2/macOS 26 | Build cannot start | Use `macos-26`, verify the first run, and adjust only to an available image compatible with `versions.json`. |
-| Updating the pinned upstream commit changes build inputs | Regressions or overlay failure | Update the SHA explicitly, review upstream changes, and let exact overlay checks fail loudly. |
-| Residual signing material remains | SideStore rejects or app crashes | Strip `_CodeSignature` and provisioning profiles; inspect every nested bundle before checkpoint approval. |
-| Upstream fake profiles are bound to Telegram's official Bundle ID | Compile-time and packaged identities diverge, causing launch hangs | Generate temporary self-signed build-only profiles with the native NagramiX identifier; remove them before packaging. |
-| App extensions require unavailable entitlements | Installation or launch fails | First green iteration may disable nonessential extensions; add them back individually after authorization works. |
-| Separate URL schemes/keychain groups are incomplete | Login callback or stored session fails | Use a distinct scheme and bundle prefix; test cold launch, login, restart, and session persistence on-device. |
-| Telegram API credentials are missing/incorrect | Authorization fails | Fail CI early; use credentials registered for NagramiX at `my.telegram.org`. |
-| Branding touches broad upstream code | Upstream merges become expensive | Keep exact transformations in one overlay script and fail loudly when upstream layout changes. |
-| GitHub artifact is called “unsigned” but contains a stale signature | SideStore re-signing behaves inconsistently | Strip signatures explicitly and add a package inspection step after first build. |
-| GitHub Actions storage/runtime cost | Slow or unavailable builds | Cache Bazel artifacts, retain IPA for 14 days, and use manual builds outside bootstrap PRs. |
-| Telegram/NagramX licensing and trademark obligations | Distribution risk | Remain clearly unofficial, use a distinct name/icon, publish modified source and preserve upstream notices. |
+| Версия Xcode на GitHub runner не совпадает с требуемой | Сборка не запускается | Использовать `macos-26` и выбирать Xcode из `versions.json`. |
+| Telegram-iOS изменился относительно закреплённой ревизии | Overlay применяется неверно | Закреплять SHA и прекращать сборку при несовпадении ожидаемых фрагментов. |
+| В IPA осталась временная подпись | SideStore не сможет корректно переподписать приложение | Удалять `_CodeSignature` и профили из всех вложенных пакетов. |
+| Расширения требуют недоступные права Apple | Ошибка установки или запуска | На первом этапе отключать необязательные расширения. |
+| Telegram API ID или hash отсутствуют | Авторизация Telegram не работает | Проверять секреты до начала длительной сборки. |
+| Изменения затрагивают слишком много upstream-кода | Обновления Telegram-iOS усложняются | Хранить собственный код отдельно и применять точечные проверяемые изменения. |
+| Интерфейс вкладок обновляется не сразу | Переключатели выглядят нерабочими | Рассылать внутреннее уведомление и пересобирать панель вкладок без перезапуска. |
 
-## Checkpoint acceptance
+## Условия приёмки
 
-- GitHub Actions completes on a macOS runner without Apple signing secrets.
-- Artifact contains one arm64 iPhone application under `Payload/NagramiX.app`.
-- SideStore signs and installs it under `com.gamesfanteam.nagramix`.
-- The app launches as NagramiX, completes Telegram authorization, survives a
-  relaunch, and retains the session.
-- Build provenance identifies the exact Telegram-iOS commit.
-
-The bootstrap is not complete until all five checks have been confirmed on the
-user's iPhone.
+- GitHub Actions завершается без сертификатов и секретов подписи Apple.
+- В артефакте находится ARM64-приложение `Payload/NagramiX.app`.
+- Bundle ID приложения равен `com.gamesfanteam.nagramix`.
+- SideStore или другой сервис подписи устанавливает IPA на iPhone.
+- NagramiX запускается и позволяет авторизоваться в Telegram.
+- Четыре настройки вкладок работают сразу после переключения.
+- После перезапуска выбранные значения сохраняются.

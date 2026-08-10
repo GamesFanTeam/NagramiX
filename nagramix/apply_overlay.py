@@ -7,9 +7,40 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 from apply_features import apply_features
+
+
+ALTERNATE_ICON_SIZES = {
+    "@2x.png": 120,
+    "@3x.png": 180,
+    "-76.png": 76,
+    "-76@2x.png": 152,
+    "-83.5@2x.png": 167,
+    "_29x29.png": 29,
+    "_58x58.png": 58,
+    "_80x80.png": 80,
+    "_87x87.png": 87,
+    "_notification.png": 20,
+    "_notification@2x.png": 40,
+    "_notification@3x.png": 60,
+}
+
+
+def resize_icon(source: Path, destination: Path, size: int) -> None:
+    try:
+        from PIL import Image
+    except ImportError:
+        subprocess.run(
+            ["sips", "-z", str(size), str(size), str(source), "--out", str(destination)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+    else:
+        with Image.open(source) as image:
+            image.resize((size, size), Image.Resampling.LANCZOS).save(destination, format="PNG")
 
 
 def replace_text(path: Path, old: str, new: str) -> bool:
@@ -61,9 +92,10 @@ def main() -> None:
     if not replace_text(make_file, anchor, replacement):
         raise SystemExit("Pinned unsigned-build anchor was not found in Make.py")
 
-    # Replace the primary Icon Composer layer with the official NagramiX asset.
+    # Replace the primary Icon Composer layer with NagramiX icon 1.
     # Icon Composer generates every required iPhone/iPad size during the build.
-    icon_source = Path(__file__).with_name("branding") / "NagramiX-AppIcon.png"
+    icon_sources = Path(__file__).with_name("branding") / "AppIcons"
+    icon_source = icon_sources / "1.png"
     icon_bundle = source / "Telegram" / "Telegram-iOS" / "Telegram.icon"
     icon_assets = icon_bundle / "Assets"
     icon_assets.mkdir(parents=True, exist_ok=True)
@@ -82,10 +114,23 @@ def main() -> None:
     icon_manifest["groups"][0]["specular"] = False
     icon_manifest_path.write_text(json.dumps(icon_manifest, indent=2) + "\n", encoding="utf-8")
 
+    # Telegram's existing alternate-icon build rule expects conventional PNG
+    # sizes in one .alticon directory per system icon name.
+    for index in range(1, 9):
+        source_icon = icon_sources / f"{index}.png"
+        if not source_icon.exists():
+            raise SystemExit(f"Missing NagramiX icon source: {source_icon}")
+        icon_name = f"NagramiX{index}"
+        destination = source / "Telegram" / "Telegram-iOS" / f"{icon_name}.alticon"
+        destination.mkdir(parents=True, exist_ok=True)
+        for suffix, size in ALTERNATE_ICON_SIZES.items():
+            resize_icon(source_icon, destination / f"{icon_name}{suffix}", size)
+
     apply_features(source)
 
     print(f"Generated configuration: {args.configuration}")
-    print(f"Applied NagramiX app icon: {icon_source}")
+    print(f"Applied NagramiX primary icon: {icon_source}")
+    print("Applied 8 NagramiX system app icons")
 
 
 if __name__ == "__main__":
