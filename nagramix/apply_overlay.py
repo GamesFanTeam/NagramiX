@@ -40,7 +40,10 @@ def resize_icon(source: Path, destination: Path, size: int) -> None:
         )
     else:
         with Image.open(source) as image:
-            image.resize((size, size), Image.Resampling.LANCZOS).save(destination, format="PNG")
+            resized = image.convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
+            opaque = Image.new("RGB", resized.size, (0, 0, 0))
+            opaque.paste(resized, mask=resized.getchannel("A"))
+            opaque.save(destination, format="PNG")
 
 
 def replace_text(path: Path, old: str, new: str) -> bool:
@@ -92,30 +95,10 @@ def main() -> None:
     if not replace_text(make_file, anchor, replacement):
         raise SystemExit("Pinned unsigned-build anchor was not found in Make.py")
 
-    # Replace the primary Icon Composer layer with NagramiX icon 1.
-    # Icon Composer generates every required iPhone/iPad size during the build.
     icon_sources = Path(__file__).with_name("branding") / "AppIcons"
     icon_source = icon_sources / "1.png"
-    icon_bundle = source / "Telegram" / "Telegram-iOS" / "Telegram.icon"
-    icon_assets = icon_bundle / "Assets"
-    icon_assets.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(icon_source, icon_assets / "NagramiX-AppIcon.png")
-    icon_manifest_path = icon_bundle / "icon.json"
-    icon_manifest = json.loads(icon_manifest_path.read_text(encoding="utf-8"))
-    icon_manifest["groups"][0]["layers"] = [
-        {
-            "blend-mode-specializations": [{"value": "normal"}],
-            "glass": False,
-            "image-name": "NagramiX-AppIcon.png",
-            "name": "NagramiX",
-        }
-    ]
-    icon_manifest["groups"][0]["blur-material"] = 0
-    icon_manifest["groups"][0]["specular"] = False
-    icon_manifest_path.write_text(json.dumps(icon_manifest, indent=2) + "\n", encoding="utf-8")
-
-    # Telegram's existing alternate-icon build rule expects conventional PNG
-    # sizes in one .alticon directory per system icon name.
+    # All eight variants, including the primary icon, use the same conventional
+    # PNG pipeline. This avoids Icon Composer applying a different scale to #1.
     for index in range(1, 9):
         source_icon = icon_sources / f"{index}.png"
         if not source_icon.exists():
@@ -129,8 +112,8 @@ def main() -> None:
     apply_features(source)
 
     print(f"Generated configuration: {args.configuration}")
-    print(f"Applied NagramiX primary icon: {icon_source}")
-    print("Applied 8 NagramiX system app icons")
+    print(f"Applied NagramiX primary icon through the PNG icon set: {icon_source}")
+    print("Applied 8 consistently prepared NagramiX system app icons")
 
 
 if __name__ == "__main__":
