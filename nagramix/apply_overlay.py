@@ -43,7 +43,6 @@ PRIMARY_ICON_IMAGES = [
     ("ipad", "29x29", "2x", "NagramiX1-58-ipad.png", 58),
     ("ipad", "40x40", "1x", "NagramiX1-40-settings.png", 40),
     ("ipad", "40x40", "2x", "NagramiX1-80-ipad.png", 80),
-    ("ipad", "76x76", "1x", "NagramiX1-76.png", 76),
     ("ipad", "76x76", "2x", "NagramiX1-152.png", 152),
     ("ipad", "83.5x83.5", "2x", "NagramiX1-167.png", 167),
     ("ios-marketing", "1024x1024", "1x", "NagramiX1-1024.png", 1024),
