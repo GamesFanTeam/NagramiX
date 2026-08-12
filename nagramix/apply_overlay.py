@@ -28,6 +28,27 @@ ALTERNATE_ICON_SIZES = {
     "_notification@3x.png": 60,
 }
 
+PRIMARY_ICON_IMAGES = [
+    ("iphone", "20x20", "2x", "NagramiX1-40.png", 40),
+    ("iphone", "20x20", "3x", "NagramiX1-60.png", 60),
+    ("iphone", "29x29", "2x", "NagramiX1-58.png", 58),
+    ("iphone", "29x29", "3x", "NagramiX1-87.png", 87),
+    ("iphone", "40x40", "2x", "NagramiX1-80.png", 80),
+    ("iphone", "40x40", "3x", "NagramiX1-120.png", 120),
+    ("iphone", "60x60", "2x", "NagramiX1-120-home.png", 120),
+    ("iphone", "60x60", "3x", "NagramiX1-180.png", 180),
+    ("ipad", "20x20", "1x", "NagramiX1-20.png", 20),
+    ("ipad", "20x20", "2x", "NagramiX1-40-ipad.png", 40),
+    ("ipad", "29x29", "1x", "NagramiX1-29.png", 29),
+    ("ipad", "29x29", "2x", "NagramiX1-58-ipad.png", 58),
+    ("ipad", "40x40", "1x", "NagramiX1-40-settings.png", 40),
+    ("ipad", "40x40", "2x", "NagramiX1-80-ipad.png", 80),
+    ("ipad", "76x76", "1x", "NagramiX1-76.png", 76),
+    ("ipad", "76x76", "2x", "NagramiX1-152.png", 152),
+    ("ipad", "83.5x83.5", "2x", "NagramiX1-167.png", 167),
+    ("ios-marketing", "1024x1024", "1x", "NagramiX1-1024.png", 1024),
+]
+
 
 def resize_icon(source: Path, destination: Path, size: int) -> None:
     try:
@@ -54,6 +75,27 @@ def replace_text(path: Path, old: str, new: str) -> bool:
         return False
     path.write_text(content.replace(old, new, 1), encoding="utf-8")
     return True
+
+
+def create_primary_icon_set(source_icon: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    images = []
+    for idiom, size_name, scale, filename, pixels in PRIMARY_ICON_IMAGES:
+        resize_icon(source_icon, destination / filename, pixels)
+        images.append({
+            "size": size_name,
+            "idiom": idiom,
+            "filename": filename,
+            "scale": scale,
+        })
+    contents = {
+        "images": images,
+        "info": {"version": 1, "author": "xcode"},
+    }
+    (destination / "Contents.json").write_text(
+        json.dumps(contents, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def main() -> None:
@@ -97,9 +139,14 @@ def main() -> None:
 
     icon_sources = Path(__file__).with_name("branding") / "AppIcons"
     icon_source = icon_sources / "1.png"
-    # All eight variants, including the primary icon, use the same conventional
-    # PNG pipeline. This avoids Icon Composer applying a different scale to #1.
-    for index in range(1, 9):
+    # The primary icon must be an .appiconset for rules_apple. It is generated
+    # from the same prepared source as the seven conventional alternate icons,
+    # so all eight retain the same visual scale without using Icon Composer.
+    create_primary_icon_set(
+        icon_source,
+        source / "Telegram" / "Telegram-iOS" / "AppIcons.xcassets" / "NagramiX1.appiconset",
+    )
+    for index in range(2, 9):
         source_icon = icon_sources / f"{index}.png"
         if not source_icon.exists():
             raise SystemExit(f"Missing NagramiX icon source: {source_icon}")
@@ -112,7 +159,7 @@ def main() -> None:
     apply_features(source)
 
     print(f"Generated configuration: {args.configuration}")
-    print(f"Applied NagramiX primary icon through the PNG icon set: {icon_source}")
+    print(f"Applied NagramiX primary icon through a PNG appiconset: {icon_source}")
     print("Applied 8 consistently prepared NagramiX system app icons")
 
 

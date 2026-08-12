@@ -895,7 +895,6 @@ def apply_features(source: Path) -> None:
 ]
 """,
         """alternate_icon_folders = [
-    "NagramiX1",
     "NagramiX2",
     "NagramiX3",
     "NagramiX4",
@@ -917,8 +916,33 @@ def apply_features(source: Path) -> None:
     replace_once(
         telegram_build,
         '    app_icons = [ ":{}_icon".format(name) for name in composer_icon_folders ],\n',
-        '    app_icons = [":NagramiX1"],\n',
-        "Use the conventional NagramiX1 PNG set as the primary icon",
+        '    app_icons = [":NagramiXPrimaryIcon"],\n',
+        "Use the NagramiX1 appiconset as the primary icon",
+    )
+    replace_once(
+        telegram_build,
+        '''filegroup(
+    name = "DefaultIcon",
+    srcs = glob([
+        "Telegram-iOS/AppIcons.xcassets/BlueIcon.appiconset/*.png",
+    ]),
+)
+''',
+        '''filegroup(
+    name = "DefaultIcon",
+    srcs = glob([
+        "Telegram-iOS/AppIcons.xcassets/NagramiX1.appiconset/*.png",
+    ]),
+)
+
+filegroup(
+    name = "NagramiXPrimaryIcon",
+    srcs = glob([
+        "Telegram-iOS/AppIcons.xcassets/NagramiX1.appiconset/**/*",
+    ]),
+)
+''',
+        "Expose the NagramiX1 appiconset to rules_apple",
     )
 
     print("Applied isolated NagramiX 0.1.7 feature overlay")
