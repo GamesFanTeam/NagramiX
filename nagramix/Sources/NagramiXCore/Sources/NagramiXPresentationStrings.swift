@@ -1,0 +1,53 @@
+import Foundation
+import TelegramPresentationData
+
+private final class NagramiXLocalizationMarker {
+}
+
+private extension PresentationStrings {
+    var nagramiXUsesRussian: Bool {
+        return self.primaryComponent.languageCode.lowercased().hasPrefix("ru")
+    }
+
+    func nagramiXLocalized(_ key: String) -> String {
+        let containingBundle = Bundle(for: NagramiXLocalizationMarker.self)
+        guard let resourcePath = containingBundle.path(forResource: "NagramiXLocalization", ofType: "bundle"), let resourceBundle = Bundle(path: resourcePath) else {
+            return key
+        }
+        let languageCode = self.nagramiXUsesRussian ? "ru" : "en"
+        guard let languagePath = resourceBundle.path(forResource: languageCode, ofType: "lproj"), let languageBundle = Bundle(path: languagePath) else {
+            return resourceBundle.localizedString(forKey: key, value: key, table: nil)
+        }
+        return languageBundle.localizedString(forKey: key, value: key, table: nil)
+    }
+}
+
+public extension PresentationStrings {
+    var nagramiXSettingsTitle: String { self.nagramiXLocalized("NagramiX.Settings.Title") }
+    var nagramiXTabsHeader: String { self.nagramiXLocalized("NagramiX.Settings.Tabs.Header") }
+    var nagramiXHideContactsTab: String { self.nagramiXLocalized("NagramiX.Settings.Tabs.HideContacts") }
+    var nagramiXHideCallsTab: String { self.nagramiXLocalized("NagramiX.Settings.Tabs.HideCalls") }
+    var nagramiXHideTabTitles: String { self.nagramiXLocalized("NagramiX.Settings.Tabs.HideTitles") }
+    var nagramiXShowSearchButton: String { self.nagramiXLocalized("NagramiX.Settings.Tabs.ShowSearch") }
+    var nagramiXVideoMessagesHeader: String { self.nagramiXLocalized("NagramiX.Settings.VideoMessages.Header") }
+    var nagramiXUseRearCamera: String { self.nagramiXLocalized("NagramiX.Settings.VideoMessages.UseRearCamera") }
+    var nagramiXStoriesHeader: String { self.nagramiXLocalized("NagramiX.Settings.Stories.Header") }
+    var nagramiXHideStories: String { self.nagramiXLocalized("NagramiX.Settings.Stories.Hide") }
+    var nagramiXDisableStoryCameraSwipe: String { self.nagramiXLocalized("NagramiX.Settings.Stories.DisableSwipe") }
+    var nagramiXConfirmStoryViewing: String { self.nagramiXLocalized("NagramiX.Settings.Stories.ConfirmViewing") }
+    var nagramiXEnableStoryRepost: String { self.nagramiXLocalized("NagramiX.Settings.Stories.Repost") }
+    var nagramiXRestartRequiredTitle: String { self.nagramiXLocalized("NagramiX.Restart.Title") }
+    var nagramiXRestartRequiredText: String { self.nagramiXLocalized("NagramiX.Restart.Text") }
+    var nagramiXRestartAction: String { self.nagramiXLocalized("NagramiX.Restart.Action") }
+    var nagramiXStoryConfirmationTitle: String { self.nagramiXLocalized("NagramiX.StoryConfirmation.Title") }
+    var nagramiXStoryConfirmationText: String { self.nagramiXLocalized("NagramiX.StoryConfirmation.Text") }
+    var nagramiXViewStoryAction: String { self.nagramiXLocalized("NagramiX.StoryConfirmation.Action") }
+    var nagramiXIconMain: String { self.nagramiXLocalized("NagramiX.Icon.Main") }
+    var nagramiXIconSunset: String { self.nagramiXLocalized("NagramiX.Icon.Sunset") }
+    var nagramiXIconAurora: String { self.nagramiXLocalized("NagramiX.Icon.Aurora") }
+    var nagramiXIconGraphite: String { self.nagramiXLocalized("NagramiX.Icon.Graphite") }
+    var nagramiXIconAmber: String { self.nagramiXLocalized("NagramiX.Icon.Amber") }
+    var nagramiXIconNeon: String { self.nagramiXLocalized("NagramiX.Icon.Neon") }
+    var nagramiXIconLime: String { self.nagramiXLocalized("NagramiX.Icon.Lime") }
+    var nagramiXIconRuby: String { self.nagramiXLocalized("NagramiX.Icon.Ruby") }
+}
