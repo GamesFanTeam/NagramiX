@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the isolated NagramiX 0.1.7 feature overlay."""
+"""Apply the isolated NagramiX 0.1.8 feature overlay."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 def replace_once(path: Path, old: str, new: str, label: str) -> None:
     text = path.read_text(encoding="utf-8")
     if old not in text:
-        raise SystemExit(f"Pinned 0.1.7 patch anchor was not found ({label}): {path}")
+        raise SystemExit(f"Pinned 0.1.8 patch anchor was not found ({label}): {path}")
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
@@ -369,6 +369,22 @@ def apply_features(source: Path) -> None:
             let isFrontPosition = !prefersRearCamera || !hasRearCamera
 """,
         "Video messages start on the configured camera",
+    )
+
+    camera_source = source / "submodules" / "Camera" / "Sources" / "Camera.swift"
+    replace_once(
+        camera_source,
+        """        if self.initialConfiguration.isRoundVideo {
+            return mainDeviceContext.output.startRecording(mode: .roundVideo, orientation: DeviceModel.current.isIpad ? orientation : .portrait, additionalOutput: self.additionalDeviceContext?.output)
+""",
+        """        if self.initialConfiguration.isRoundVideo {
+            // In dual-camera mode CameraOutput defaults to the front stream.
+            // Synchronize it with the position shown in the preview before the
+            // recorder starts, so the sent round video uses the same camera.
+            mainDeviceContext.output.markPositionChange(position: self.positionValue)
+            return mainDeviceContext.output.startRecording(mode: .roundVideo, orientation: DeviceModel.current.isIpad ? orientation : .portrait, additionalOutput: self.additionalDeviceContext?.output)
+""",
+        "Record round video from the camera selected in the preview",
     )
 
     chat_list_controller = source / "submodules" / "ChatListUI" / "Sources" / "ChatListController.swift"
@@ -827,7 +843,7 @@ def apply_features(source: Path) -> None:
 """ + "                \n" + """                return icons
 """,
         """                return [
-                    PresentationAppIcon(name: "NagramiX1", imageName: "NagramiX1", isDefault: true),
+                    PresentationAppIcon(name: "NagramiX1", imageName: "NagramiX1Preview", isDefault: true),
                     PresentationAppIcon(name: "NagramiX2", imageName: "NagramiX2"),
                     PresentationAppIcon(name: "NagramiX3", imageName: "NagramiX3"),
                     PresentationAppIcon(name: "NagramiX4", imageName: "NagramiX4"),
@@ -945,4 +961,4 @@ filegroup(
         "Expose the NagramiX1 appiconset to rules_apple",
     )
 
-    print("Applied isolated NagramiX 0.1.7 feature overlay")
+    print("Applied isolated NagramiX 0.1.8 feature overlay")

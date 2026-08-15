@@ -48,6 +48,12 @@ PRIMARY_ICON_IMAGES = [
     ("ios-marketing", "1024x1024", "1x", "NagramiX1-1024.png", 1024),
 ]
 
+PRIMARY_ICON_PREVIEW_IMAGES = [
+    ("1x", "NagramiX1Preview.png", 60),
+    ("2x", "NagramiX1Preview@2x.png", 120),
+    ("3x", "NagramiX1Preview@3x.png", 180),
+]
+
 
 def resize_icon(source: Path, destination: Path, size: int) -> None:
     try:
@@ -84,6 +90,33 @@ def create_primary_icon_set(source_icon: Path, destination: Path) -> None:
         images.append({
             "size": size_name,
             "idiom": idiom,
+            "filename": filename,
+            "scale": scale,
+        })
+    contents = {
+        "images": images,
+        "info": {"version": 1, "author": "xcode"},
+    }
+    (destination / "Contents.json").write_text(
+        json.dumps(contents, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def create_primary_icon_preview_set(source_icon: Path, destination: Path) -> None:
+    """Create a normal image asset used by the in-app icon picker.
+
+    An AppIcon asset is available to iOS as the primary application icon, but
+    it cannot be loaded reliably through UIImage(named:). Keeping the picker
+    preview separate lets the default icon remain a true primary icon while
+    still providing a tappable image in Telegram's icon grid.
+    """
+    destination.mkdir(parents=True, exist_ok=True)
+    images = []
+    for scale, filename, pixels in PRIMARY_ICON_PREVIEW_IMAGES:
+        resize_icon(source_icon, destination / filename, pixels)
+        images.append({
+            "idiom": "universal",
             "filename": filename,
             "scale": scale,
         })
@@ -145,6 +178,10 @@ def main() -> None:
         icon_source,
         source / "Telegram" / "Telegram-iOS" / "AppIcons.xcassets" / "NagramiX1.appiconset",
     )
+    create_primary_icon_preview_set(
+        icon_source,
+        source / "Telegram" / "Telegram-iOS" / "Icons.xcassets" / "NagramiX1Preview.imageset",
+    )
     for index in range(2, 9):
         source_icon = icon_sources / f"{index}.png"
         if not source_icon.exists():
@@ -158,7 +195,7 @@ def main() -> None:
     apply_features(source)
 
     print(f"Generated configuration: {args.configuration}")
-    print(f"Applied NagramiX primary icon through a PNG appiconset: {icon_source}")
+    print(f"Applied NagramiX primary icon and picker preview from: {icon_source}")
     print("Applied 8 consistently prepared NagramiX system app icons")
 
 
