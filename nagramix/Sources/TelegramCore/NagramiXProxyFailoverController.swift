@@ -26,7 +26,7 @@ final class NagramiXProxyFailoverController {
     private var network: Network?
     private var settingsDisposable: Disposable?
     private var statusDisposable: Disposable?
-    private var probeDisposable: Disposable?
+    private var probeDisposable: MTDisposable?
     private var settingsObserver: NSObjectProtocol?
     private var failureTimer: SwiftSignalKit.Timer?
     private var candidateTimer: SwiftSignalKit.Timer?
