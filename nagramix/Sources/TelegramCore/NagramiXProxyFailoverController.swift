@@ -1,7 +1,21 @@
 import Foundation
 import SwiftSignalKit
 import MtProtoKit
-import NagramiXCore
+
+private enum NagramiXNetworkSettingsBridge {
+    static let changedNotification = Notification.Name("NagramiXSettingsChanged")
+    private static let autoSwitchEnabledKey = "nagramix.network.proxyAutoSwitchEnabled"
+    private static let autoSwitchTimeoutKey = "nagramix.network.proxyAutoSwitchTimeout"
+
+    static var proxyAutoSwitchEnabled: Bool {
+        return UserDefaults.standard.object(forKey: self.autoSwitchEnabledKey) as? Bool ?? false
+    }
+
+    static var proxyAutoSwitchTimeout: Int {
+        let value = UserDefaults.standard.integer(forKey: self.autoSwitchTimeoutKey)
+        return [15, 30, 60].contains(value) ? value : 15
+    }
+}
 
 final class NagramiXProxyFailoverController {
     private static let sharedQueue = Queue(name: "org.nagramix.proxy-failover")
@@ -47,7 +61,7 @@ final class NagramiXProxyFailoverController {
             |> deliverOn(self.queue)).start(next: { [weak self] status in
                 self?.updateConnectionStatus(status)
             })
-            self.settingsObserver = NotificationCenter.default.addObserver(forName: NagramiXTabSettings.changedNotification, object: nil, queue: nil, using: { [weak self] _ in
+            self.settingsObserver = NotificationCenter.default.addObserver(forName: NagramiXNetworkSettingsBridge.changedNotification, object: nil, queue: nil, using: { [weak self] _ in
                 self?.queue.async {
                     self?.reevaluate()
                 }
@@ -107,8 +121,7 @@ final class NagramiXProxyFailoverController {
     }
 
     private func reevaluate() {
-        let settings = NagramiXTabSettings.current
-        guard settings.proxyAutoSwitchEnabled else {
+        guard NagramiXNetworkSettingsBridge.proxyAutoSwitchEnabled else {
             self.cancelFailureProcess(incrementGeneration: true)
             return
         }
@@ -138,7 +151,7 @@ final class NagramiXProxyFailoverController {
         }
         NagramiXProxyFailoverController.failoverOwner = self
 
-        let timeout = [15, 30, 60].contains(settings.proxyAutoSwitchTimeout) ? settings.proxyAutoSwitchTimeout : 15
+        let timeout = NagramiXNetworkSettingsBridge.proxyAutoSwitchTimeout
         let generation = self.generation
         let timer = SwiftSignalKit.Timer(timeout: Double(timeout), repeat: false, completion: { [weak self] in
             guard let self, generation == self.generation else {

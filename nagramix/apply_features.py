@@ -103,12 +103,6 @@ def apply_features(source: Path) -> None:
     network_source = source / "submodules" / "TelegramCore" / "Sources" / "Network" / "Network.swift"
     replace_once(
         network_source,
-        "import NetworkLogging\n",
-        "import NetworkLogging\nimport NagramiXCore\n",
-        "Network NagramiXCore import",
-    )
-    replace_once(
-        network_source,
         """    public func dropConnectionStatus() {
         _connectionStatus.set(.single(.waitingForNetwork))
     }
@@ -128,12 +122,6 @@ def apply_features(source: Path) -> None:
     account_source = source / "submodules" / "TelegramCore" / "Sources" / "Account" / "Account.swift"
     replace_once(
         account_source,
-        "import EncryptionProvider\n",
-        "import EncryptionProvider\nimport NagramiXCore\n",
-        "Account NagramiXCore import",
-    )
-    replace_once(
-        account_source,
         """        }))
 
         if !supplementary {
@@ -141,7 +129,7 @@ def apply_features(source: Path) -> None:
 """,
         """        }))
 
-        let nagramiXDnsObserver = NotificationCenter.default.addObserver(forName: NagramiXTabSettings.dnsChangedNotification, object: nil, queue: nil, using: { _ in
+        let nagramiXDnsObserver = NotificationCenter.default.addObserver(forName: Notification.Name("NagramiXDnsSettingsChanged"), object: nil, queue: nil, using: { _ in
             network.reconnectForNagramiXDnsChange()
         })
         self.managedOperationsDisposable.add(ActionDisposable {
@@ -377,14 +365,6 @@ def apply_features(source: Path) -> None:
         '        "//submodules/AccountContext:AccountContext",\n',
         '        "//submodules/AccountContext:AccountContext",\n        "//submodules/NagramiXCore:NagramiXCore",\n',
         "ChatListUI NagramiXCore dependency",
-    )
-
-    telegram_core_build = source / "submodules" / "TelegramCore" / "BUILD"
-    replace_once(
-        telegram_core_build,
-        '        "//submodules/MtProtoKit:MtProtoKit",\n',
-        '        "//submodules/MtProtoKit:MtProtoKit",\n        "//submodules/NagramiXCore:NagramiXCore",\n',
-        "TelegramCore NagramiXCore dependency",
     )
 
     video_message_build = source / "submodules" / "TelegramUI" / "Components" / "VideoMessageCameraScreen" / "BUILD"
