@@ -1,7 +1,37 @@
 import Foundation
 
+public enum NagramiXDnsProvider: Int, CaseIterable, Equatable {
+    case system = 0
+    case google = 1
+    case quad9 = 2
+    case adGuard = 3
+    case mullvad = 4
+    case cloudflare = 5
+    case customDoh = 6
+
+    public var dohEndpoint: String? {
+        switch self {
+        case .system:
+            return nil
+        case .google:
+            return "https://dns.google/dns-query"
+        case .quad9:
+            return "https://dns.quad9.net/dns-query"
+        case .adGuard:
+            return "https://dns.adguard-dns.com/dns-query"
+        case .mullvad:
+            return "https://dns.mullvad.net/dns-query"
+        case .cloudflare:
+            return "https://cloudflare-dns.com/dns-query"
+        case .customDoh:
+            return nil
+        }
+    }
+}
+
 public struct NagramiXTabSettings: Equatable {
     public static let changedNotification = Notification.Name("NagramiXSettingsChanged")
+    public static let dnsChangedNotification = Notification.Name("NagramiXDnsSettingsChanged")
     public static let softRestartRequestedNotification = Notification.Name("NagramiXTabInterfaceSoftRestartRequested")
 
     private enum Key {
@@ -14,6 +44,11 @@ public struct NagramiXTabSettings: Equatable {
         static let disableStoryCameraSwipe = "nagramix.stories.disableCameraSwipe"
         static let confirmStoryViewing = "nagramix.stories.confirmViewing"
         static let enableStoryRepost = "nagramix.stories.enableRepost"
+        static let dnsProvider = "nagramix.network.dnsProvider"
+        static let customDohUrl = "nagramix.network.customDohUrl"
+        static let proxyAutoSwitchEnabled = "nagramix.network.proxyAutoSwitchEnabled"
+        static let proxyAutoSwitchTimeout = "nagramix.network.proxyAutoSwitchTimeout"
+        static let showProxyButton = "nagramix.interface.showProxyButton"
     }
 
     public var hideContacts: Bool
@@ -25,6 +60,11 @@ public struct NagramiXTabSettings: Equatable {
     public var disableStoryCameraSwipe: Bool
     public var confirmStoryViewing: Bool
     public var enableStoryRepost: Bool
+    public var dnsProvider: NagramiXDnsProvider
+    public var customDohUrl: String
+    public var proxyAutoSwitchEnabled: Bool
+    public var proxyAutoSwitchTimeout: Int
+    public var showProxyButton: Bool
 
     public init(
         hideContacts: Bool,
@@ -35,7 +75,12 @@ public struct NagramiXTabSettings: Equatable {
         hideStories: Bool,
         disableStoryCameraSwipe: Bool,
         confirmStoryViewing: Bool,
-        enableStoryRepost: Bool
+        enableStoryRepost: Bool,
+        dnsProvider: NagramiXDnsProvider,
+        customDohUrl: String,
+        proxyAutoSwitchEnabled: Bool,
+        proxyAutoSwitchTimeout: Int,
+        showProxyButton: Bool
     ) {
         self.hideContacts = hideContacts
         self.hideCalls = hideCalls
@@ -46,6 +91,11 @@ public struct NagramiXTabSettings: Equatable {
         self.disableStoryCameraSwipe = disableStoryCameraSwipe
         self.confirmStoryViewing = confirmStoryViewing
         self.enableStoryRepost = enableStoryRepost
+        self.dnsProvider = dnsProvider
+        self.customDohUrl = customDohUrl
+        self.proxyAutoSwitchEnabled = proxyAutoSwitchEnabled
+        self.proxyAutoSwitchTimeout = proxyAutoSwitchTimeout
+        self.showProxyButton = showProxyButton
     }
 
     public static var current: NagramiXTabSettings {
@@ -59,12 +109,19 @@ public struct NagramiXTabSettings: Equatable {
             hideStories: defaults.object(forKey: Key.hideStories) as? Bool ?? false,
             disableStoryCameraSwipe: defaults.object(forKey: Key.disableStoryCameraSwipe) as? Bool ?? false,
             confirmStoryViewing: defaults.object(forKey: Key.confirmStoryViewing) as? Bool ?? false,
-            enableStoryRepost: defaults.object(forKey: Key.enableStoryRepost) as? Bool ?? false
+            enableStoryRepost: defaults.object(forKey: Key.enableStoryRepost) as? Bool ?? false,
+            dnsProvider: NagramiXDnsProvider(rawValue: defaults.integer(forKey: Key.dnsProvider)) ?? .system,
+            customDohUrl: defaults.string(forKey: Key.customDohUrl) ?? "",
+            proxyAutoSwitchEnabled: defaults.object(forKey: Key.proxyAutoSwitchEnabled) as? Bool ?? false,
+            proxyAutoSwitchTimeout: [15, 30, 60].contains(defaults.integer(forKey: Key.proxyAutoSwitchTimeout)) ? defaults.integer(forKey: Key.proxyAutoSwitchTimeout) : 15,
+            showProxyButton: defaults.object(forKey: Key.showProxyButton) as? Bool ?? true
         )
     }
 
     public static func update(_ transform: (inout NagramiXTabSettings) -> Void) {
         var value = self.current
+        let previousDnsProvider = value.dnsProvider
+        let previousCustomDohUrl = value.customDohUrl
         transform(&value)
 
         let defaults = UserDefaults.standard
@@ -77,8 +134,16 @@ public struct NagramiXTabSettings: Equatable {
         defaults.set(value.disableStoryCameraSwipe, forKey: Key.disableStoryCameraSwipe)
         defaults.set(value.confirmStoryViewing, forKey: Key.confirmStoryViewing)
         defaults.set(value.enableStoryRepost, forKey: Key.enableStoryRepost)
+        defaults.set(value.dnsProvider.rawValue, forKey: Key.dnsProvider)
+        defaults.set(value.customDohUrl, forKey: Key.customDohUrl)
+        defaults.set(value.proxyAutoSwitchEnabled, forKey: Key.proxyAutoSwitchEnabled)
+        defaults.set([15, 30, 60].contains(value.proxyAutoSwitchTimeout) ? value.proxyAutoSwitchTimeout : 15, forKey: Key.proxyAutoSwitchTimeout)
+        defaults.set(value.showProxyButton, forKey: Key.showProxyButton)
 
         NotificationCenter.default.post(name: self.changedNotification, object: nil)
+        if previousDnsProvider != value.dnsProvider || previousCustomDohUrl != value.customDohUrl {
+            NotificationCenter.default.post(name: self.dnsChangedNotification, object: nil)
+        }
     }
 
     public static func requestTabInterfaceSoftRestart() {

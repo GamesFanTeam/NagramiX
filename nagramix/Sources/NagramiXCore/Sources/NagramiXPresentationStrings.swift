@@ -50,4 +50,24 @@ public extension PresentationStrings {
     var nagramiXIconNeon: String { self.nagramiXLocalized("NagramiX.Icon.Neon") }
     var nagramiXIconLime: String { self.nagramiXLocalized("NagramiX.Icon.Lime") }
     var nagramiXIconRuby: String { self.nagramiXLocalized("NagramiX.Icon.Ruby") }
+    var nagramiXDns: String { self.nagramiXLocalized("NagramiX.Network.DNS") }
+    var nagramiXDnsSystem: String { self.nagramiXLocalized("NagramiX.Network.DNS.System") }
+    var nagramiXDnsGoogle: String { self.nagramiXLocalized("NagramiX.Network.DNS.Google") }
+    var nagramiXDnsQuad9: String { self.nagramiXLocalized("NagramiX.Network.DNS.Quad9") }
+    var nagramiXDnsAdGuard: String { self.nagramiXLocalized("NagramiX.Network.DNS.AdGuard") }
+    var nagramiXDnsMullvad: String { self.nagramiXLocalized("NagramiX.Network.DNS.Mullvad") }
+    var nagramiXDnsCloudflare: String { self.nagramiXLocalized("NagramiX.Network.DNS.Cloudflare") }
+    var nagramiXDnsCustom: String { self.nagramiXLocalized("NagramiX.Network.DNS.Custom") }
+    var nagramiXCustomDohUrl: String { self.nagramiXLocalized("NagramiX.Network.DNS.CustomURL") }
+    var nagramiXCustomDohPlaceholder: String { self.nagramiXLocalized("NagramiX.Network.DNS.CustomPlaceholder") }
+    var nagramiXCustomDohInvalid: String { self.nagramiXLocalized("NagramiX.Network.DNS.CustomInvalid") }
+    var nagramiXCustomDohUnavailable: String { self.nagramiXLocalized("NagramiX.Network.DNS.CustomUnavailable") }
+    var nagramiXProxyAutoSwitch: String { self.nagramiXLocalized("NagramiX.Network.Proxy.AutoSwitch") }
+    var nagramiXProxySwitchAfter: String { self.nagramiXLocalized("NagramiX.Network.Proxy.SwitchAfter") }
+    var nagramiXSeconds15: String { self.nagramiXLocalized("NagramiX.Time.15Seconds") }
+    var nagramiXSeconds30: String { self.nagramiXLocalized("NagramiX.Time.30Seconds") }
+    var nagramiXSeconds60: String { self.nagramiXLocalized("NagramiX.Time.60Seconds") }
+    var nagramiXShowProxyButton: String { self.nagramiXLocalized("NagramiX.Interface.ShowProxyButton") }
+    var nagramiXEdit: String { self.nagramiXLocalized("NagramiX.Common.Edit") }
+    var nagramiXSave: String { self.nagramiXLocalized("NagramiX.Common.Save") }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the isolated NagramiX 0.1.8 feature overlay."""
+"""Apply the isolated NagramiX 0.1.9 feature overlay."""
 
 from __future__ import annotations
 
@@ -10,8 +10,17 @@ from pathlib import Path
 def replace_once(path: Path, old: str, new: str, label: str) -> None:
     text = path.read_text(encoding="utf-8")
     if old not in text:
-        raise SystemExit(f"Pinned 0.1.8 patch anchor was not found ({label}): {path}")
+        raise SystemExit(f"Pinned 0.1.9 patch anchor was not found ({label}): {path}")
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def replace_between(path: Path, start: str, end: str, new: str, label: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    start_index = text.find(start)
+    end_index = text.find(end, start_index + len(start))
+    if start_index < 0 or end_index < 0:
+        raise SystemExit(f"Pinned 0.1.9 patch range was not found ({label}): {path}")
+    path.write_text(text[:start_index] + new + text[end_index:], encoding="utf-8")
 
 
 def apply_features(source: Path) -> None:
@@ -23,13 +32,160 @@ def apply_features(source: Path) -> None:
         raise SystemExit(f"NagramiXCore already exists in the source tree: {core_target}")
     shutil.copytree(core_source, core_target)
 
+    mtproto_source = overlay / "Sources" / "MtProtoKit"
+    mtproto_target = source / "submodules" / "MtProtoKit" / "Sources"
+    shutil.copy2(mtproto_source / "NagramiXDNSResolver.h", mtproto_target / "NagramiXDNSResolver.h")
+    shutil.copy2(mtproto_source / "NagramiXDNSResolver.m", mtproto_target / "NagramiXDNSResolver.m")
+    mtproto_public = source / "submodules" / "MtProtoKit" / "PublicHeaders" / "MtProtoKit"
+    shutil.copy2(mtproto_source / "NagramiXDNSResolver.h", mtproto_public / "NagramiXDNSResolver.h")
+    replace_once(
+        mtproto_public / "MtProtoKit.h",
+        "#import <MtProtoKit/MTProxyConnectivity.h>\n",
+        "#import <MtProtoKit/MTProxyConnectivity.h>\n#import <MtProtoKit/NagramiXDNSResolver.h>\n",
+        "Expose NagramiX DoH endpoint validation to SettingsUI",
+    )
+
+    mt_dns = mtproto_target / "MTDNS.m"
+    replace_once(
+        mt_dns,
+        '#import "MTDNS.h"\n',
+        '#import "MTDNS.h"\n#import "NagramiXDNSResolver.h"\n',
+        "NagramiX real DoH resolver import",
+    )
+    replace_once(
+        mt_dns,
+        """+ (MTSignal *)resolveHostnameUniversal:(NSString *)hostname port:(int32_t)port {
+    return [[self resolveHostname:hostname] timeout:10.0 onQueue:[MTQueue concurrentDefaultQueue] orSignal:[self resolveHostnameNative:hostname port:port]];
+}
+""",
+        """+ (MTSignal *)resolveHostnameUniversal:(NSString *)hostname port:(int32_t)port {
+    if ([NagramiXDNSResolver usesSystemResolver]) {
+        return [self resolveHostnameNative:hostname port:port];
+    }
+    return [[NagramiXDNSResolver resolveHostname:hostname] timeout:12.0 onQueue:[MTQueue concurrentDefaultQueue] orSignal:[MTSignal fail:nil]];
+}
+
++ (MTSignal *)testDohEndpoint:(NSString *)endpoint hostname:(NSString *)hostname {
+    return [[NagramiXDNSResolver testEndpoint:endpoint hostname:hostname] timeout:12.0 onQueue:[MTQueue concurrentDefaultQueue] orSignal:[MTSignal fail:nil]];
+}
+""",
+        "Use selected System or DoH resolver in the real MTProto proxy DNS path",
+    )
+
+    mt_dns_header = mtproto_target / "MTDNS.h"
+    replace_once(
+        mt_dns_header,
+        "+ (MTSignal *)resolveHostnameUniversal:(NSString *)hostname port:(int32_t)port;\n",
+        "+ (MTSignal *)resolveHostnameUniversal:(NSString *)hostname port:(int32_t)port;\n+ (MTSignal *)testDohEndpoint:(NSString *)endpoint hostname:(NSString *)hostname;\n",
+        "Expose Custom DoH validation through the actual resolver",
+    )
+
+    mt_tcp_connection = mtproto_target / "MTTcpConnection.m"
+    replace_once(
+        mt_tcp_connection,
+        """                }];
+            } file:__FILE_NAME__ line:__LINE__]];
+""",
+        """                }];
+            } error:^(id error) {
+                (void)error;
+                [[MTTcpConnection tcpQueue] dispatchOnQueue:^{
+                    __strong MTTcpConnection *strongSelf = weakSelf;
+                    if (strongSelf != nil) {
+                        [strongSelf closeAndNotifyWithError:true];
+                    }
+                }];
+            } completed:nil file:__FILE_NAME__ line:__LINE__]];
+""",
+        "Close MTProto connection when the selected DoH resolver fails",
+    )
+
+    network_source = source / "submodules" / "TelegramCore" / "Sources" / "Network" / "Network.swift"
+    replace_once(
+        network_source,
+        "import NetworkLogging\n",
+        "import NetworkLogging\nimport NagramiXCore\n",
+        "Network NagramiXCore import",
+    )
+    replace_once(
+        network_source,
+        """    public func dropConnectionStatus() {
+        _connectionStatus.set(.single(.waitingForNetwork))
+    }
+""",
+        """    public func dropConnectionStatus() {
+        _connectionStatus.set(.single(.waitingForNetwork))
+    }
+
+    public func reconnectForNagramiXDnsChange() {
+        self.mtProto.simulateDisconnection()
+        self.dropConnectionStatus()
+    }
+""",
+        "Reconnect MTProto after a runtime DNS resolver change",
+    )
+
+    account_source = source / "submodules" / "TelegramCore" / "Sources" / "Account" / "Account.swift"
+    replace_once(
+        account_source,
+        "import EncryptionProvider\n",
+        "import EncryptionProvider\nimport NagramiXCore\n",
+        "Account NagramiXCore import",
+    )
+    replace_once(
+        account_source,
+        """        }))
+
+        if !supplementary {
+            let mediaBox = postbox.mediaBox
+""",
+        """        }))
+
+        let nagramiXDnsObserver = NotificationCenter.default.addObserver(forName: NagramiXTabSettings.dnsChangedNotification, object: nil, queue: nil, using: { _ in
+            network.reconnectForNagramiXDnsChange()
+        })
+        self.managedOperationsDisposable.add(ActionDisposable {
+            NotificationCenter.default.removeObserver(nagramiXDnsObserver)
+        })
+
+        if !supplementary {
+            let mediaBox = postbox.mediaBox
+""",
+        "Reconnect every account network when the selected resolver changes",
+    )
+    replace_once(
+        account_source,
+        """        self.managedOperationsDisposable.add(ActionDisposable {
+            NotificationCenter.default.removeObserver(nagramiXDnsObserver)
+        })
+
+        if !supplementary {
+""",
+        """        self.managedOperationsDisposable.add(ActionDisposable {
+            NotificationCenter.default.removeObserver(nagramiXDnsObserver)
+        })
+
+        if !supplementary {
+            let nagramiXProxyFailoverController = NagramiXProxyFailoverController()
+            nagramiXProxyFailoverController.start(accountManager: accountManager, network: network)
+            self.managedOperationsDisposable.add(ActionDisposable {
+                nagramiXProxyFailoverController.stop()
+            })
+        }
+
+        if !supplementary {
+""",
+        "Start the process-wide proxy failover controller outside UI lifecycle",
+    )
+
     settings_controller_source = overlay / "Sources" / "SettingsUI" / "NagramiXSettingsController.swift"
     settings_controller_target = source / "submodules" / "SettingsUI" / "Sources" / settings_controller_source.name
     shutil.copy2(settings_controller_source, settings_controller_target)
+    shutil.copy2(overlay / "Sources" / "SettingsUI" / "NagramiXCustomDohController.swift", settings_controller_target.parent / "NagramiXCustomDohController.swift")
 
-    story_confirmation_source = overlay / "Sources" / "StoryContainerScreen" / "NagramiXConfirmingStoryContentContext.swift"
-    story_confirmation_target = source / "submodules" / "TelegramUI" / "Components" / "Stories" / "StoryContainerScreen" / "Sources" / story_confirmation_source.name
-    shutil.copy2(story_confirmation_source, story_confirmation_target)
+    telegram_core_overlay = overlay / "Sources" / "TelegramCore" / "NagramiXProxyFailoverController.swift"
+    telegram_core_target = source / "submodules" / "TelegramCore" / "Sources" / "Network" / telegram_core_overlay.name
+    shutil.copy2(telegram_core_overlay, telegram_core_target)
 
     settings_build = source / "submodules" / "SettingsUI" / "BUILD"
     replace_once(
@@ -37,6 +193,166 @@ def apply_features(source: Path) -> None:
         '        "//submodules/AccountContext:AccountContext",\n',
         '        "//submodules/AccountContext:AccountContext",\n        "//submodules/NagramiXCore:NagramiXCore",\n',
         "SettingsUI NagramiXCore dependency",
+    )
+
+    proxy_list = source / "submodules" / "SettingsUI" / "Sources" / "Data and Storage" / "ProxyListSettingsController.swift"
+    replace_once(
+        proxy_list,
+        "import UrlEscaping\n",
+        "import UrlEscaping\nimport NagramiXCore\n",
+        "Proxy settings NagramiXCore import",
+    )
+    replace_between(
+        proxy_list,
+        "private final class ProxySettingsControllerArguments {",
+        "private struct ProxySettingsControllerState: Equatable {",
+        (overlay / "Sources" / "SettingsUI" / "ProxyListNagramiXBlock.swift.inc").read_text(encoding="utf-8"),
+        "Proxy screen DNS and automatic failover controls",
+    )
+    replace_once(
+        proxy_list,
+        """    var pushControllerImpl: ((ViewController) -> Void)?
+    var dismissImpl: (() -> Void)?
+""",
+        """    var pushControllerImpl: ((ViewController) -> Void)?
+    var presentControllerImpl: ((ViewController) -> Void)?
+    var dismissImpl: (() -> Void)?
+""",
+        "Proxy settings presentation callback",
+    )
+    replace_once(
+        proxy_list,
+        "    var shareProxyListImpl: (() -> Void)?\n    \n    let arguments = ProxySettingsControllerArguments(toggleEnabled: { value in\n",
+        """    var shareProxyListImpl: (() -> Void)?
+    let nagramiXSettingsPromise = ValuePromise(NagramiXTabSettings.current, ignoreRepeated: false)
+    let updateNagramiXSettings: ((inout NagramiXTabSettings) -> Void) -> Void = { transform in
+        NagramiXTabSettings.update(transform)
+        nagramiXSettingsPromise.set(NagramiXTabSettings.current)
+    }
+    var selectDnsImpl: (() -> Void)?
+    var editCustomDohImpl: (() -> Void)?
+    var selectTimeoutImpl: (() -> Void)?
+
+    let arguments = ProxySettingsControllerArguments(toggleEnabled: { value in
+""",
+        "Proxy settings persistent NagramiX state",
+    )
+    replace_once(
+        proxy_list,
+        """        }).start()
+    }, addNewServer: {
+""",
+        """        }).start()
+    }, selectDns: {
+        selectDnsImpl?()
+    }, editCustomDoh: {
+        editCustomDohImpl?()
+    }, toggleAutoSwitch: { value in
+        updateNagramiXSettings { $0.proxyAutoSwitchEnabled = value }
+    }, selectAutoSwitchTimeout: {
+        selectTimeoutImpl?()
+    }, addNewServer: {
+""",
+        "Proxy settings DNS and Auto-Switch actions",
+    )
+    replace_once(
+        proxy_list,
+        """    let proxySettings = Promise<ProxySettings>()
+""",
+        """    editCustomDohImpl = {
+        guard let context else {
+            return
+        }
+        let current = NagramiXTabSettings.current
+        presentControllerImpl?(nagramiXCustomDohController(context: context, initialValue: current.customDohUrl, apply: { value in
+            updateNagramiXSettings {
+                $0.customDohUrl = value
+                $0.dnsProvider = .customDoh
+            }
+        }, clear: {
+            updateNagramiXSettings {
+                $0.customDohUrl = ""
+                $0.dnsProvider = .system
+            }
+        }))
+    }
+    selectDnsImpl = {
+        let presentationData = sharedContext.currentPresentationData.with { $0 }
+        let actionSheet = ActionSheetController(presentationData: presentationData)
+        let current = NagramiXTabSettings.current
+        let providers: [NagramiXDnsProvider] = [.system, .google, .quad9, .adGuard, .mullvad, .cloudflare, .customDoh]
+        let items: [ActionSheetItem] = providers.map { provider in
+            ActionSheetButtonItem(title: (current.dnsProvider == provider ? "✓ " : "") + nagramiXDnsTitle(provider, strings: presentationData.strings), color: .accent, action: { [weak actionSheet] in
+                actionSheet?.dismissAnimated()
+                if provider == .customDoh && current.customDohUrl.isEmpty {
+                    editCustomDohImpl?()
+                } else {
+                    updateNagramiXSettings { $0.dnsProvider = provider }
+                }
+            })
+        }
+        var providerItems: [ActionSheetItem] = [ActionSheetTextItem(title: presentationData.strings.nagramiXDns)]
+        providerItems.append(contentsOf: items)
+        actionSheet.setItemGroups([
+            ActionSheetItemGroup(items: providerItems),
+            ActionSheetItemGroup(items: [ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in actionSheet?.dismissAnimated() })])
+        ])
+        presentControllerImpl?(actionSheet)
+    }
+    selectTimeoutImpl = {
+        let presentationData = sharedContext.currentPresentationData.with { $0 }
+        let actionSheet = ActionSheetController(presentationData: presentationData)
+        let currentTimeout = NagramiXTabSettings.current.proxyAutoSwitchTimeout
+        let values = [15, 30, 60]
+        let items: [ActionSheetItem] = values.map { value in
+            ActionSheetButtonItem(title: (currentTimeout == value ? "✓ " : "") + nagramiXTimeoutTitle(value, strings: presentationData.strings), color: .accent, action: { [weak actionSheet] in
+                actionSheet?.dismissAnimated()
+                updateNagramiXSettings { $0.proxyAutoSwitchTimeout = value }
+            })
+        }
+        var timeoutItems: [ActionSheetItem] = [ActionSheetTextItem(title: presentationData.strings.nagramiXProxySwitchAfter)]
+        timeoutItems.append(contentsOf: items)
+        actionSheet.setItemGroups([
+            ActionSheetItemGroup(items: timeoutItems),
+            ActionSheetItemGroup(items: [ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in actionSheet?.dismissAnimated() })])
+        ])
+        presentControllerImpl?(actionSheet)
+    }
+
+    let proxySettings = Promise<ProxySettings>()
+""",
+        "Native DNS and Auto-Switch selectors plus Custom DoH editor",
+    )
+    replace_once(
+        proxy_list,
+        """    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), statusesContext.statuses(), network.connectionStatus)
+    |> map { presentationData, state, proxySettings, statuses, connectionStatus -> (ItemListControllerState, (ItemListNodeState, Any)) in
+""",
+        """    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), statusesContext.statuses(), network.connectionStatus, nagramiXSettingsPromise.get())
+    |> map { presentationData, state, proxySettings, statuses, connectionStatus, nagramiXSettings -> (ItemListControllerState, (ItemListNodeState, Any)) in
+""",
+        "Observe NagramiX networking settings in Proxy screen",
+    )
+    replace_once(
+        proxy_list,
+        "entries: proxySettingsControllerEntries(theme: presentationData.theme, strings: presentationData.strings, state: state, proxySettings: proxySettings, statuses: statuses, connectionStatus: connectionStatus)",
+        "entries: proxySettingsControllerEntries(theme: presentationData.theme, strings: presentationData.strings, state: state, proxySettings: proxySettings, nagramiXSettings: nagramiXSettings, statuses: statuses, connectionStatus: connectionStatus)",
+        "Render NagramiX networking settings",
+    )
+    replace_once(
+        proxy_list,
+        """    pushControllerImpl = { [weak controller] c in
+        (controller?.navigationController as? NavigationController)?.pushViewController(c)
+    }
+""",
+        """    pushControllerImpl = { [weak controller] c in
+        (controller?.navigationController as? NavigationController)?.pushViewController(c)
+    }
+    presentControllerImpl = { [weak controller] c in
+        controller?.present(c, in: .window(.root))
+    }
+""",
+        "Present Proxy selectors and Custom DoH editor",
     )
 
     telegram_ui_build = source / "submodules" / "TelegramUI" / "BUILD"
@@ -61,6 +377,14 @@ def apply_features(source: Path) -> None:
         '        "//submodules/AccountContext:AccountContext",\n',
         '        "//submodules/AccountContext:AccountContext",\n        "//submodules/NagramiXCore:NagramiXCore",\n',
         "ChatListUI NagramiXCore dependency",
+    )
+
+    telegram_core_build = source / "submodules" / "TelegramCore" / "BUILD"
+    replace_once(
+        telegram_core_build,
+        '        "//submodules/MtProtoKit:MtProtoKit",\n',
+        '        "//submodules/MtProtoKit:MtProtoKit",\n        "//submodules/NagramiXCore:NagramiXCore",\n',
+        "TelegramCore NagramiXCore dependency",
     )
 
     video_message_build = source / "submodules" / "TelegramUI" / "Components" / "VideoMessageCameraScreen" / "BUILD"
@@ -89,7 +413,7 @@ def apply_features(source: Path) -> None:
     replace_once(
         settings_items,
         "    case myProfile\n    case proxy\n",
-        "    case myProfile\n    case nagramix\n    case proxy\n",
+        "    case nagramix\n    case myProfile\n    case proxy\n",
         "NagramiX settings group order",
     )
     replace_once(
@@ -99,12 +423,12 @@ def apply_features(source: Path) -> None:
         }))
 """ + "        \n" + """        if !settings.proxySettings.servers.isEmpty {
 """,
-        """        items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_MyProfile, icon: PresentationResourcesSettings.myProfile, action: {
-            interaction.openSettings(.profile)
+        """        items[.nagramix]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.nagramiXSettingsTitle, icon: PresentationResourcesSettings.appearance, action: {
+            interaction.openSettings(.nagramix)
         }))
 
-        items[.nagramix]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.nagramiXSettingsTitle, icon: PresentationResourcesSettings.appearance, action: {
-            interaction.openSettings(.nagramix)
+        items[.myProfile]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_MyProfile, icon: PresentationResourcesSettings.myProfile, action: {
+            interaction.openSettings(.profile)
         }))
 """ + "        \n" + """        if !settings.proxySettings.servers.isEmpty {
 """,
@@ -396,6 +720,51 @@ def apply_features(source: Path) -> None:
     )
     replace_once(
         chat_list_controller,
+        """        let hasProxy = context.sharedContext.accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
+        |> map { sharedData -> (Bool, Bool) in
+            if let settings = sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) {
+                return (!settings.servers.isEmpty, settings.enabled)
+            } else {
+                return (false, false)
+            }
+        }
+        |> distinctUntilChanged(isEqual: { lhs, rhs in
+            return lhs == rhs
+        })
+""",
+        """        let showProxyButton = Signal<Bool, NoError> { subscriber in
+            subscriber.putNext(NagramiXTabSettings.current.showProxyButton)
+            let observer = NotificationCenter.default.addObserver(forName: NagramiXTabSettings.changedNotification, object: nil, queue: nil, using: { _ in
+                subscriber.putNext(NagramiXTabSettings.current.showProxyButton)
+            })
+            return ActionDisposable {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+        |> distinctUntilChanged
+        let hasProxy = combineLatest(context.sharedContext.accountManager.sharedData(keys: [SharedDataKeys.proxySettings]), showProxyButton)
+        |> map { sharedData, showProxyButton -> (Bool, Bool) in
+            let settings = sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) ?? .defaultSettings
+            return (showProxyButton, settings.enabled)
+        }
+        |> distinctUntilChanged(isEqual: { lhs, rhs in
+            return lhs == rhs
+        })
+""",
+        "Keep the Chat proxy button visible independently from saved proxies",
+    )
+    replace_once(
+        chat_list_controller,
+        """                        self.leftButton = AnyComponentWithIdentity(id: "edit", component: AnyComponent(NavigationButtonComponent(
+                            content: .text(title: presentationData.strings.Common_Edit, isBold: false),
+""",
+        """                        self.leftButton = AnyComponentWithIdentity(id: "edit", component: AnyComponent(NavigationButtonComponent(
+                            content: .text(title: presentationData.strings.nagramiXEdit, isBold: false),
+""",
+        "Use the full localized Edit title on the root Chat screen",
+    )
+    replace_once(
+        chat_list_controller,
         "    private var displayedStoriesTooltip: Bool = false\n",
         "    private var displayedStoriesTooltip: Bool = false\n    private var nagramiXSettingsObserver: NSObjectProtocol?\n    private var nagramiXLastOrderedStorySubscriptions: EngineStorySubscriptions?\n",
         "Chat list NagramiX settings observer state",
@@ -464,6 +833,27 @@ def apply_features(source: Path) -> None:
         "    func storyCameraPanGestureChanged(transitionFraction: CGFloat) {\n        if NagramiXTabSettings.current.disableStoryCameraSwipe && self.storyCameraTransitionInCoordinator == nil {\n            return\n        }\n        guard let rootController = self.context.sharedContext.mainWindow?.viewController as? TelegramRootControllerInterface else {\n",
         "Disable only the story-camera swipe gesture",
     )
+    replace_once(
+        chat_list_controller,
+        """            componentView.storyComposeAction = { [weak self] offset in
+                guard let self else {
+                    return
+                }
+                self.openStoryCamera(fromList: true, gesturePullOffset: offset)
+            }
+""",
+        """            componentView.storyComposeAction = { [weak self] offset in
+                guard let self else {
+                    return
+                }
+                guard !NagramiXTabSettings.current.disableStoryCameraSwipe else {
+                    return
+                }
+                self.openStoryCamera(fromList: true, gesturePullOffset: offset)
+            }
+""",
+        "Disable the story-carousel pull gesture without disabling explicit camera buttons",
+    )
 
     story_container_screen = source / "submodules" / "TelegramUI" / "Components" / "Stories" / "StoryContainerScreen" / "Sources" / "StoryContainerScreen.swift"
     replace_once(
@@ -479,13 +869,15 @@ def apply_features(source: Path) -> None:
     private var isDismissed: Bool = false
 """,
         """    private let context: AccountContext
+    private static var nagramiXConfirmationParentIds = Set<ObjectIdentifier>()
     private var didAnimateIn: Bool = false
     private var isDismissed: Bool = false
-    private let nagramiXConfirmingContent: NagramiXConfirmingStoryContentContext?
-    private var nagramiXNeedsStoryConfirmation: Bool = false
-    private var nagramiXDidPresentStoryConfirmation: Bool = false
+    private let nagramiXContent: StoryContentContext
+    private weak var nagramiXTransitionSourceView: UIView?
+    private var nagramiXPresentationDisposable: Disposable?
+    private var nagramiXSettingsObserver: NSObjectProtocol?
 """,
-        "Story confirmation controller state",
+        "Story presentation and settings state",
     )
     replace_once(
         story_container_screen,
@@ -497,22 +889,14 @@ def apply_features(source: Path) -> None:
 """,
         """    ) {
         self.context = context
-
-        let effectiveContent: StoryContentContext
-        if NagramiXTabSettings.current.confirmStoryViewing {
-            let confirmingContent = NagramiXConfirmingStoryContentContext(source: content, accountPeerId: context.account.peerId)
-            self.nagramiXConfirmingContent = confirmingContent
-            effectiveContent = confirmingContent
-        } else {
-            self.nagramiXConfirmingContent = nil
-            effectiveContent = content
-        }
+        self.nagramiXContent = content
+        self.nagramiXTransitionSourceView = transitionIn?.sourceView
 
         super.init(context: context, component: StoryContainerScreenComponent(
             context: context,
-            content: effectiveContent,
+            content: content,
 """,
-        "Gate the story context before the viewer is created",
+        "Keep the real story context available while presentation is pending",
     )
     replace_once(
         story_container_screen,
@@ -521,66 +905,220 @@ def apply_features(source: Path) -> None:
 """,
         """        self.context.sharedContext.hasPreloadBlockingContent.set(.single(true))
 
-        self.nagramiXConfirmingContent?.requestConfirmation = { [weak self] in
-            self?.nagramiXRequestStoryConfirmation()
-        }
+        self.nagramiXSettingsObserver = NotificationCenter.default.addObserver(forName: NagramiXTabSettings.changedNotification, object: nil, queue: .main, using: { [weak self] _ in
+            self?.requestLayout(forceUpdate: true, transition: .immediate)
+        })
     }
 """,
-        "Connect the central story confirmation request",
+        "Refresh built-in story actions immediately when NagramiX settings change",
     )
     replace_once(
         story_container_screen,
-        """    override public func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-""" + "        \n" + """        self.view.disablesInteractiveModalDismiss = true
+        """    deinit {
+        self.context.sharedContext.hasPreloadBlockingContent.set(.single(false))
+        self.focusedItemPromise.set(.single(nil))
+    }
 """,
-        """    private func nagramiXRequestStoryConfirmation() {
-        self.nagramiXNeedsStoryConfirmation = true
-        if self.isViewLoaded && self.view.window != nil {
-            self.nagramiXPresentStoryConfirmationIfNeeded()
+        """    deinit {
+        self.nagramiXPresentationDisposable?.dispose()
+        if let nagramiXSettingsObserver = self.nagramiXSettingsObserver {
+            NotificationCenter.default.removeObserver(nagramiXSettingsObserver)
         }
+        self.context.sharedContext.hasPreloadBlockingContent.set(.single(false))
+        self.focusedItemPromise.set(.single(nil))
+    }
+""",
+        "Clean up story presentation and settings observers",
+    )
+    replace_once(
+        story_container_screen,
+        """    override public func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
+        super.containerLayoutUpdated(layout, transition: transition)
+    }
+""",
+        """    override public func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
+        super.containerLayoutUpdated(layout, transition: transition)
     }
 
-    private func nagramiXPresentStoryConfirmationIfNeeded() {
-        guard self.nagramiXNeedsStoryConfirmation, !self.nagramiXDidPresentStoryConfirmation else {
+    public func nagramiXPresent(from parentController: ViewController, action: @escaping () -> Void) {
+        guard NagramiXTabSettings.current.confirmStoryViewing else {
+            action()
             return
         }
-        self.nagramiXDidPresentStoryConfirmation = true
 
-        let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
-        let actionSheet = ActionSheetController(presentationData: presentationData)
-        var didAccept = false
-        actionSheet.dismissed = { [weak self] _ in
-            if !didAccept {
-                self?.dismiss()
+        let presentForState: (StoryContentContextState) -> Void = { [weak self, weak parentController] state in
+            guard let self, let parentController else {
+                return
             }
+            guard let slice = state.slice else {
+                self.nagramiXTransitionSourceView?.isHidden = false
+                return
+            }
+            if slice.effectivePeer.id == self.context.account.peerId {
+                action()
+                return
+            }
+
+            let parentId = ObjectIdentifier(parentController)
+            if StoryContainerScreen.nagramiXConfirmationParentIds.contains(parentId) {
+                self.nagramiXTransitionSourceView?.isHidden = false
+                return
+            }
+            StoryContainerScreen.nagramiXConfirmationParentIds.insert(parentId)
+
+            let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+            let actionSheet = ActionSheetController(presentationData: presentationData)
+            var didAccept = false
+            actionSheet.dismissed = { [weak self] _ in
+                StoryContainerScreen.nagramiXConfirmationParentIds.remove(parentId)
+                if !didAccept {
+                    self?.nagramiXTransitionSourceView?.isHidden = false
+                }
+            }
+            actionSheet.setItemGroups([
+                ActionSheetItemGroup(items: [
+                    ActionSheetTextItem(title: presentationData.strings.nagramiXStoryConfirmationTitle + "\\n" + presentationData.strings.nagramiXStoryConfirmationText),
+                    ActionSheetButtonItem(title: presentationData.strings.nagramiXViewStoryAction, color: .accent, font: .bold, action: { [weak actionSheet] in
+                        didAccept = true
+                        StoryContainerScreen.nagramiXConfirmationParentIds.remove(parentId)
+                        actionSheet?.dismissAnimated()
+                        action()
+                    }),
+                ]),
+                ActionSheetItemGroup(items: [
+                    ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                        actionSheet?.dismissAnimated()
+                    }),
+                ]),
+            ])
+            parentController.present(actionSheet, in: .window(.root))
         }
-        actionSheet.setItemGroups([
-            ActionSheetItemGroup(items: [
-                ActionSheetTextItem(title: presentationData.strings.nagramiXStoryConfirmationTitle + "\\n" + presentationData.strings.nagramiXStoryConfirmationText),
-                ActionSheetButtonItem(title: presentationData.strings.nagramiXViewStoryAction, color: .accent, font: .bold, action: { [weak self, weak actionSheet] in
-                    didAccept = true
-                    self?.nagramiXNeedsStoryConfirmation = false
-                    self?.nagramiXConfirmingContent?.activate()
-                    actionSheet?.dismissAnimated()
-                }),
-            ]),
-            ActionSheetItemGroup(items: [
-                ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
-                    actionSheet?.dismissAnimated()
-                }),
-            ]),
-        ])
-        self.present(actionSheet, in: .window(.root))
+
+        if let state = self.nagramiXContent.stateValue {
+            presentForState(state)
+        } else {
+            self.nagramiXPresentationDisposable = (self.nagramiXContent.state
+            |> take(1)
+            |> deliverOnMainQueue).start(next: { state in
+                presentForState(state)
+            })
+        }
     }
 
-    override public func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
+    public func nagramiXPush(from parentController: ViewController, completion: @escaping () -> Void = {}) {
+        self.nagramiXPresent(from: parentController, action: { [weak self, weak parentController] in
+            guard let self, let parentController else {
+                return
+            }
+            parentController.push(self)
+            completion()
+        })
+    }
 
-        self.view.disablesInteractiveModalDismiss = true
-        self.nagramiXPresentStoryConfirmationIfNeeded()
+    public func nagramiXPush(from navigationController: NavigationController, completion: @escaping () -> Void = {}) {
+        self.nagramiXPresent(from: navigationController, action: { [weak self, weak navigationController] in
+            guard let self, let navigationController else {
+                return
+            }
+            navigationController.pushViewController(self)
+            completion()
+        })
+    }
 """,
-        "Present confirmation before an external story becomes visible",
+        "Confirm an external story before it is pushed onto the navigation stack",
+    )
+
+    replace_once(
+        chat_list_controller,
+        "            self.push(storyContainerScreen)\n",
+        "            storyContainerScreen.nagramiXPush(from: self)\n",
+        "Confirm chat-list stories before pushing the viewer",
+    )
+
+    message_stats_controller = source / "submodules" / "StatisticsUI" / "Sources" / "MessageStatsController.swift"
+    replace_once(
+        message_stats_controller,
+        "            controller.push(storyContainerScreen)\n",
+        "            storyContainerScreen.nagramiXPush(from: controller)\n",
+        "Confirm message-stat stories before pushing the viewer",
+    )
+
+    channel_stats_controller = source / "submodules" / "StatisticsUI" / "Sources" / "ChannelStatsController.swift"
+    replace_once(
+        channel_stats_controller,
+        "            controller.push(storyContainerScreen)\n",
+        "            storyContainerScreen.nagramiXPush(from: controller)\n",
+        "Confirm channel-stat stories before pushing the viewer",
+    )
+
+    open_resolved_url = source / "submodules" / "TelegramUI" / "Sources" / "OpenResolvedUrl.swift"
+    replace_once(
+        open_resolved_url,
+        "                        navigationController?.pushViewController(storyContainerScreen)\n",
+        "                        if let navigationController {\n                            storyContainerScreen.nagramiXPush(from: navigationController)\n                        }\n",
+        "Confirm deep-linked stories before pushing the viewer",
+    )
+
+    open_chat_message = source / "submodules" / "TelegramUI" / "Sources" / "OpenChatMessage.swift"
+    replace_once(
+        open_chat_message,
+        "            navigationController?.pushViewController(storyContainerScreen)\n",
+        "            if let navigationController {\n                storyContainerScreen.nagramiXPush(from: navigationController)\n            }\n",
+        "Confirm message-linked stories before pushing the viewer",
+    )
+
+    chat_controller = source / "submodules" / "TelegramUI" / "Sources" / "ChatController.swift"
+    replace_once(
+        chat_controller,
+        "                self.push(storyContainerScreen)\n",
+        "                storyContainerScreen.nagramiXPush(from: self)\n",
+        "Confirm in-chat stories before pushing the viewer",
+    )
+
+    open_stories = source / "submodules" / "TelegramUI" / "Components" / "Stories" / "StoryContainerScreen" / "Sources" / "OpenStories.swift"
+    replace_once(
+        open_stories,
+        "            parentController?.push(storyContainerScreen)\n",
+        "            if let parentController {\n                storyContainerScreen.nagramiXPush(from: parentController)\n            }\n",
+        "Confirm archived stories before pushing the viewer",
+    )
+    replace_once(
+        open_stories,
+        "            parentController?.push(storyContainerScreen)\n            completion(storyContainerScreen)\n",
+        "            if let parentController {\n                storyContainerScreen.nagramiXPush(from: parentController, completion: {\n                    completion(storyContainerScreen)\n                })\n            }\n",
+        "Confirm peer stories before pushing the viewer",
+    )
+
+    story_item_set_component = source / "submodules" / "TelegramUI" / "Components" / "Stories" / "StoryContainerScreen" / "Sources" / "StoryItemSetContainerComponent.swift"
+    replace_once(
+        story_item_set_component,
+        "                controller.push(storyContainerScreen)\n",
+        "                storyContainerScreen.nagramiXPush(from: controller)\n",
+        "Confirm repost-chain stories before pushing the viewer",
+    )
+
+    peer_info_story_pane = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoVisualMediaPaneNode" / "Sources" / "PeerInfoStoryPaneNode.swift"
+    replace_once(
+        peer_info_story_pane,
+        "                navigationController.pushViewController(storyContainerScreen)\n",
+        "                storyContainerScreen.nagramiXPush(from: navigationController)\n",
+        "Confirm media-pane stories before pushing the viewer",
+    )
+
+    peer_info_open_stories = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoScreen" / "Sources" / "PeerInfoScreenOpenStories.swift"
+    replace_once(
+        peer_info_open_stories,
+        "                self.controller?.push(storyContainerScreen)\n",
+        "                if let controller = self.controller {\n                    storyContainerScreen.nagramiXPush(from: controller)\n                }\n",
+        "Confirm profile-header stories before pushing the viewer",
+    )
+
+    peer_info_screen = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoScreen" / "Sources" / "PeerInfoScreen.swift"
+    replace_once(
+        peer_info_screen,
+        "                self.controller?.push(storyContainerScreen)\n",
+        "                if let controller = self.controller {\n                    storyContainerScreen.nagramiXPush(from: controller)\n                }\n",
+        "Confirm profile stories before pushing the viewer",
     )
 
     story_footer_panel = source / "submodules" / "TelegramUI" / "Components" / "Stories" / "StoryFooterPanelComponent" / "Sources" / "StoryFooterPanelComponent.swift"
@@ -762,8 +1300,8 @@ def apply_features(source: Path) -> None:
     replace_once(
         story_item_set_component,
         "                                    canShare: canShare,\n                                    externalViews: nil,\n",
-        "                                    canShare: canShare,\n                                    canRepost: NagramiXTabSettings.current.enableStoryRepost,\n                                    externalViews: nil,\n",
-        "Pass the NagramiX repost setting to the built-in story editor action",
+        "                                    canShare: canShare,\n                                    canRepost: canShare && NagramiXTabSettings.current.enableStoryRepost,\n                                    externalViews: nil,\n",
+        "Combine NagramiX repost preference with Telegram forwarding restrictions",
     )
 
     story_send_message = source / "submodules" / "TelegramUI" / "Components" / "Stories" / "StoryContainerScreen" / "Sources" / "StoryItemSetContainerViewSendMessage.swift"
@@ -961,4 +1499,4 @@ filegroup(
         "Expose the NagramiX1 appiconset to rules_apple",
     )
 
-    print("Applied isolated NagramiX 0.1.8 feature overlay")
+    print("Applied isolated NagramiX 0.1.9 feature overlay")
