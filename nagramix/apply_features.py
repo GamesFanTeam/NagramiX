@@ -886,7 +886,7 @@ def apply_features(source: Path) -> None:
         """        self.context.sharedContext.hasPreloadBlockingContent.set(.single(true))
 
         self.nagramiXSettingsObserver = NotificationCenter.default.addObserver(forName: NagramiXTabSettings.changedNotification, object: nil, queue: .main, using: { [weak self] _ in
-            self?.requestLayout(forceUpdate: true, transition: .immediate)
+            self?.requestLayout(forceUpdate: true, transition: ContainedViewLayoutTransition.immediate)
         })
     }
 """,
@@ -996,7 +996,12 @@ def apply_features(source: Path) -> None:
     }
 
     public func nagramiXPush(from navigationController: NavigationController, completion: @escaping () -> Void = {}) {
-        self.nagramiXPresent(from: navigationController, action: { [weak self, weak navigationController] in
+        guard let parentController = navigationController.topViewController as? ViewController else {
+            navigationController.pushViewController(self)
+            completion()
+            return
+        }
+        self.nagramiXPresent(from: parentController, action: { [weak self, weak navigationController] in
             guard let self, let navigationController else {
                 return
             }
