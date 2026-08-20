@@ -3,6 +3,7 @@ import Display
 import SwiftSignalKit
 import MtProtoKit
 import TelegramPresentationData
+import PresentationDataUtils
 import AccountContext
 import ComponentFlow
 import AlertComponent
@@ -63,6 +64,8 @@ func nagramiXCustomDohController(context: AccountContext, initialValue: String, 
                 }
             }, error: { _ in
                 subscriber.putCompletion()
+            }, completed: {
+                subscriber.putCompletion()
             })
             return ActionDisposable { disposable?.dispose() }
         }
@@ -70,7 +73,7 @@ func nagramiXCustomDohController(context: AccountContext, initialValue: String, 
         |> deliverOnMainQueue).start(next: { _ in
             didResolve = true
             apply(url)
-            controller?.dismissAnimated()
+            controller?.dismiss()
         }, completed: {
             if !didResolve {
                 progress.set(false)
