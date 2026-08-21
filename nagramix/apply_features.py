@@ -551,13 +551,52 @@ def apply_features(source: Path) -> None:
     )
     replace_once(
         story_chat_content,
+        """        self.storyDisposable = (combineLatest(queue: .mainQueue(),
+            listContext.state,
+            self.focusedIdUpdated.get(),
+            preferHighQualityStories
+        )
+        |> deliverOnMainQueue).startStrict(next: { [weak self] state, _, preferHighQualityStories in
+            guard let self else {
+                return
+            }
+""",
+        """        let listStateWithReadIds: Signal<(StoryListContext.State, [PeerId: Int32]), NoError> = listContext.state
+        |> mapToSignal { state in
+            return context.account.postbox.transaction { transaction -> (StoryListContext.State, [PeerId: Int32]) in
+                var maxReadIds: [PeerId: Int32] = [:]
+                for item in state.items {
+                    if maxReadIds[item.id.peerId] == nil {
+                        maxReadIds[item.id.peerId] = transaction.getPeerStoryState(peerId: item.id.peerId)?.entry.get(Stories.PeerState.self)?.maxReadId ?? 0
+                    }
+                }
+                return (state, maxReadIds)
+            }
+        }
+
+        self.storyDisposable = (combineLatest(queue: .mainQueue(),
+            listStateWithReadIds,
+            self.focusedIdUpdated.get(),
+            preferHighQualityStories
+        )
+        |> deliverOnMainQueue).startStrict(next: { [weak self] stateAndMaxReadIds, _, preferHighQualityStories in
+            guard let self else {
+                return
+            }
+            let state = stateAndMaxReadIds.0
+            let maxReadIds = stateAndMaxReadIds.1
+""",
+        "Load per-peer read state for story-list items",
+    )
+    replace_once(
+        story_chat_content,
         """                            entityFiles: extractItemEntityFiles(item: stateItem.storyItem, allEntityFiles: state.allEntityFiles),
                             itemPeer: stateItem.peer
                         ))
 """,
         """                            entityFiles: extractItemEntityFiles(item: stateItem.storyItem, allEntityFiles: state.allEntityFiles),
                             itemPeer: stateItem.peer,
-                            isSeen: stateItem.id.id <= state.maxReadId
+                            isSeen: stateItem.id.id <= (maxReadIds[stateItem.id.peerId] ?? 0)
                         ))
 """,
         "Carry read state for story-list items",
@@ -571,7 +610,7 @@ def apply_features(source: Path) -> None:
 """,
         """                                entityFiles: extractItemEntityFiles(item: item.storyItem, allEntityFiles: state.allEntityFiles),
                                 itemPeer: item.peer,
-                                isSeen: item.id.id <= state.maxReadId
+                                isSeen: item.id.id <= (maxReadIds[item.id.peerId] ?? 0)
                             ),
                             totalCount: state.totalCount,
 """,
@@ -1479,7 +1518,7 @@ def apply_features(source: Path) -> None:
             viewButton.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 44.0), viewButton.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -44.0), viewButton.topAnchor.constraint(equalTo: bodyLabel.bottomAnchor, constant: 48.0), viewButton.heightAnchor.constraint(equalToConstant: 58.0)
         ])
         self.nagramiXConfirmationOverlay = overlay
-        self.requestLayout(forceUpdate: true, transition: .immediate)
+        self.requestLayout(forceUpdate: true, transition: ContainedViewLayoutTransition.immediate)
     }
 
     @objc private func nagramiXCancelStoryConfirmation() {
@@ -1492,7 +1531,7 @@ def apply_features(source: Path) -> None:
         self.nagramiXPendingConfirmationId = nil
         self.nagramiXConfirmationOverlay?.removeFromSuperview()
         self.nagramiXContent.markAsSeen(id: id)
-        self.requestLayout(forceUpdate: true, transition: .immediate)
+        self.requestLayout(forceUpdate: true, transition: ContainedViewLayoutTransition.immediate)
     }
 
     public func nagramiXPresent(from parentController: ViewController, action: @escaping () -> Void) {
