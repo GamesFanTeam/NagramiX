@@ -43,6 +43,9 @@
 "NagramiX.Time.30Seconds" = "30 seconds";
 "NagramiX.Time.60Seconds" = "60 seconds";
 "NagramiX.Interface.ShowProxyButton" = "Show Proxy Button";
-"NagramiX.Interface.ShowProxySponsorChannel" = "Show Proxy Sponsor Channel";
+"NagramiX.Interface.HideProxySponsorChannel" = "Hide Proxy Sponsor Channel";
 "NagramiX.Common.Edit" = "Edit";
 "NagramiX.Common.Save" = "Save";
+"NagramiX.Info.Features" = "NagramiX Features";
+"NagramiX.Info.Updates" = "NagramiX Updates";
+"NagramiX.Info.Help" = "NagramiX Help";

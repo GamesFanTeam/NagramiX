@@ -119,7 +119,17 @@ final class NagramiXProxyFailoverController {
             self.suppressedServer = nil
             self.invalidate(suppressCurrent: false)
         case let .connecting(_, hasProxyIssues):
-            if !hasProxyIssues {
+            if hasProxyIssues {
+                if case let .connecting(origin, candidates, index, candidate, token) = self.phase,
+                   self.settings.activeServer == candidate,
+                   token == self.generation {
+                    // ConnectionsManager has confirmed that the candidate itself
+                    // cannot establish a proxy connection. Do not wait for the
+                    // secondary timeout and never retry this candidate in the
+                    // same failover generation.
+                    self.check(origin: origin, candidates: candidates, index: index + 1, token: token)
+                }
+            } else {
                 switch self.phase {
                 case .applying(_, _, _, _, _), .connecting(_, _, _, _, _):
                     break
@@ -211,6 +221,15 @@ final class NagramiXProxyFailoverController {
                     return
                 }
                 self.apply(origin: origin, candidates: candidates, index: index, candidate: candidate, token: token)
+            }
+        }, completed: { [weak self] in
+            self?.queue.async {
+                guard let self, token == self.generation,
+                      case let .checking(_, _, phaseIndex, phaseToken) = self.phase,
+                      phaseIndex == index, phaseToken == token else { return }
+                self.cancelTimer()
+                self.probeDisposable = nil
+                self.check(origin: origin, candidates: candidates, index: index + 1, token: token)
             }
         })
     }

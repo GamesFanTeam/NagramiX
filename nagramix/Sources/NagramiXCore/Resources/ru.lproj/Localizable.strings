@@ -43,7 +43,7 @@
 "NagramiX.Time.30Seconds" = "30 секунд";
 "NagramiX.Time.60Seconds" = "60 секунд";
 "NagramiX.Interface.ShowProxyButton" = "Показывать кнопку прокси";
-"NagramiX.Interface.ShowProxySponsorChannel" = "Показывать канал спонсора прокси";
+"NagramiX.Interface.HideProxySponsorChannel" = "Скрыть канал спонсора прокси";
 "NagramiX.Debug.Debug" = "Отладка";
 "NagramiX.Debug.Simulate Stickers Import" = "Имитировать импорт стикеров";
 "NagramiX.Debug.Send Logs (Up to 40 MB)" = "Отправить логи (до 40 МБ)";
@@ -120,3 +120,6 @@
 "NagramiX.Debug.[WIP] OS mic mute" = "[В разработке] системное отключение микрофона";
 "NagramiX.Common.Edit" = "Изменить";
 "NagramiX.Common.Save" = "Сохранить";
+"NagramiX.Info.Features" = "Возможности NagramiX";
+"NagramiX.Info.Updates" = "Обновления NagramiX";
+"NagramiX.Info.Help" = "Помощь NagramiX";

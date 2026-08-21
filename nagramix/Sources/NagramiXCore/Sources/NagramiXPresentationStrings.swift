@@ -76,7 +76,10 @@ public extension PresentationStrings {
     var nagramiXSeconds30: String { self.nagramiXLocalized("NagramiX.Time.30Seconds") }
     var nagramiXSeconds60: String { self.nagramiXLocalized("NagramiX.Time.60Seconds") }
     var nagramiXShowProxyButton: String { self.nagramiXLocalized("NagramiX.Interface.ShowProxyButton") }
-    var nagramiXShowProxySponsorChannel: String { self.nagramiXLocalized("NagramiX.Interface.ShowProxySponsorChannel") }
+    var nagramiXHideProxySponsorChannel: String { self.nagramiXLocalized("NagramiX.Interface.HideProxySponsorChannel") }
     var nagramiXEdit: String { self.nagramiXLocalized("NagramiX.Common.Edit") }
     var nagramiXSave: String { self.nagramiXLocalized("NagramiX.Common.Save") }
+    var nagramiXFeatures: String { self.nagramiXLocalized("NagramiX.Info.Features") }
+    var nagramiXUpdates: String { self.nagramiXLocalized("NagramiX.Info.Updates") }
+    var nagramiXHelp: String { self.nagramiXLocalized("NagramiX.Info.Help") }
 }

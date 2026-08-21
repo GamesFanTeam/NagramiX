@@ -49,7 +49,8 @@ public struct NagramiXTabSettings: Equatable {
         static let proxyAutoSwitchEnabled = "nagramix.network.proxyAutoSwitchEnabled"
         static let proxyAutoSwitchTimeout = "nagramix.network.proxyAutoSwitchTimeout"
         static let showProxyButton = "nagramix.interface.showProxyButton"
-        static let showProxySponsorChannel = "nagramix.interface.showProxySponsorChannel"
+        static let hideProxySponsorChannel = "nagramix.interface.hideProxySponsorChannel"
+        static let legacyShowProxySponsorChannel = "nagramix.interface.showProxySponsorChannel"
     }
 
     public var hideContacts: Bool
@@ -66,7 +67,7 @@ public struct NagramiXTabSettings: Equatable {
     public var proxyAutoSwitchEnabled: Bool
     public var proxyAutoSwitchTimeout: Int
     public var showProxyButton: Bool
-    public var showProxySponsorChannel: Bool
+    public var hideProxySponsorChannel: Bool
 
     public init(
         hideContacts: Bool,
@@ -83,7 +84,7 @@ public struct NagramiXTabSettings: Equatable {
         proxyAutoSwitchEnabled: Bool,
         proxyAutoSwitchTimeout: Int,
         showProxyButton: Bool,
-        showProxySponsorChannel: Bool
+        hideProxySponsorChannel: Bool
     ) {
         self.hideContacts = hideContacts
         self.hideCalls = hideCalls
@@ -99,11 +100,21 @@ public struct NagramiXTabSettings: Equatable {
         self.proxyAutoSwitchEnabled = proxyAutoSwitchEnabled
         self.proxyAutoSwitchTimeout = proxyAutoSwitchTimeout
         self.showProxyButton = showProxyButton
-        self.showProxySponsorChannel = showProxySponsorChannel
+        self.hideProxySponsorChannel = hideProxySponsorChannel
     }
 
     public static var current: NagramiXTabSettings {
         let defaults = UserDefaults.standard
+        let hideProxySponsorChannel: Bool
+        if let value = defaults.object(forKey: Key.hideProxySponsorChannel) as? Bool {
+            hideProxySponsorChannel = value
+        } else if let legacyShowValue = defaults.object(forKey: Key.legacyShowProxySponsorChannel) as? Bool {
+            // 0.2.0 stored the opposite semantic. Preserve the user's visible
+            // result while migrating to the new "hide" setting.
+            hideProxySponsorChannel = !legacyShowValue
+        } else {
+            hideProxySponsorChannel = true
+        }
         return NagramiXTabSettings(
             hideContacts: defaults.object(forKey: Key.hideContacts) as? Bool ?? true,
             hideCalls: defaults.object(forKey: Key.hideCalls) as? Bool ?? true,
@@ -119,7 +130,7 @@ public struct NagramiXTabSettings: Equatable {
             proxyAutoSwitchEnabled: defaults.object(forKey: Key.proxyAutoSwitchEnabled) as? Bool ?? false,
             proxyAutoSwitchTimeout: [15, 30, 60].contains(defaults.integer(forKey: Key.proxyAutoSwitchTimeout)) ? defaults.integer(forKey: Key.proxyAutoSwitchTimeout) : 15,
             showProxyButton: defaults.object(forKey: Key.showProxyButton) as? Bool ?? true,
-            showProxySponsorChannel: defaults.object(forKey: Key.showProxySponsorChannel) as? Bool ?? false
+            hideProxySponsorChannel: hideProxySponsorChannel
         )
     }
 
@@ -144,7 +155,8 @@ public struct NagramiXTabSettings: Equatable {
         defaults.set(value.proxyAutoSwitchEnabled, forKey: Key.proxyAutoSwitchEnabled)
         defaults.set([15, 30, 60].contains(value.proxyAutoSwitchTimeout) ? value.proxyAutoSwitchTimeout : 15, forKey: Key.proxyAutoSwitchTimeout)
         defaults.set(value.showProxyButton, forKey: Key.showProxyButton)
-        defaults.set(value.showProxySponsorChannel, forKey: Key.showProxySponsorChannel)
+        defaults.set(value.hideProxySponsorChannel, forKey: Key.hideProxySponsorChannel)
+        defaults.removeObject(forKey: Key.legacyShowProxySponsorChannel)
 
         NotificationCenter.default.post(name: self.changedNotification, object: nil)
         if previousDnsProvider != value.dnsProvider || previousCustomDohUrl != value.customDohUrl {

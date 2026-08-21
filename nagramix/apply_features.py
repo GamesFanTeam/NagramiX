@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the isolated NagramiX 0.2.0 feature overlay."""
+"""Apply the isolated NagramiX 0.2.1 feature overlay."""
 
 from __future__ import annotations
 
@@ -37,12 +37,52 @@ def localize_debug_titles(path: Path) -> None:
 def apply_features(source: Path) -> None:
     overlay = Path(__file__).resolve().parent
 
+    settings_icons_source = overlay / "Assets" / "SettingsIcons"
+    settings_icons_target = source / "submodules" / "TelegramUI" / "Images.xcassets" / "Item List" / "Icons"
+    for icon_source in settings_icons_source.iterdir():
+        if icon_source.is_dir():
+            shutil.copytree(icon_source, settings_icons_target / icon_source.name, dirs_exist_ok=True)
+
+    presentation_resources_settings = source / "submodules" / "TelegramPresentationData" / "Sources" / "Resources" / "PresentationResourcesSettings.swift"
+    replace_once(
+        presentation_resources_settings,
+        """    public static let support = renderSettingsIcon(name: "Item List/Icons/Support", backgroundColors: [colorOrange])
+    public static let faq = renderSettingsIcon(name: "Item List/Icons/Faq", backgroundColors: [colorLightBlue])
+    public static let tips = renderSettingsIcon(name: "Item List/Icons/Tips", backgroundColors: [UIColor(rgb: 0xffcc02)])
+""",
+        """    public static let support = renderSettingsIcon(name: "Item List/Icons/Support", backgroundColors: [colorOrange])
+    public static let faq = renderSettingsIcon(name: "Item List/Icons/Faq", backgroundColors: [colorLightBlue])
+    public static let tips = renderSettingsIcon(name: "Item List/Icons/Tips", backgroundColors: [UIColor(rgb: 0xffcc02)])
+    public static let nagramiXFeatures = renderSettingsIcon(name: "Item List/Icons/NagramiXFeatures", backgroundColors: [colorPurple])
+    public static let nagramiXUpdates = renderSettingsIcon(name: "Item List/Icons/NagramiXUpdates", backgroundColors: [colorOrange])
+""",
+        "NagramiX information block icons",
+    )
+
     default_strings = source / "submodules" / "TelegramPresentationData" / "Sources" / "DefaultPresentationStrings.swift"
     replace_once(
         default_strings,
         'PresentationStrings.Component(languageCode: "en", localizedName: "English", pluralizationRulesCode: nil, dict: NSDictionary(contentsOf: URL(fileURLWithPath: getAppBundle().path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: "en")!))',
         'PresentationStrings.Component(languageCode: "ru", localizedName: "Русский", pluralizationRulesCode: nil, dict: NSDictionary(contentsOf: URL(fileURLWithPath: getAppBundle().path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: "ru")!))',
         "Use Russian as the clean-install primary localization",
+    )
+    replace_once(
+        default_strings,
+        """public let defaultPresentationStrings = PresentationStrings(primaryComponent:""",
+        """private func nagramiXDefaultRussianDictionary() -> [String: String] {
+    var dictionary = NSDictionary(contentsOf: URL(fileURLWithPath: getAppBundle().path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: "ru")!)) as! [String: String]
+    dictionary["Common.Edit"] = "Изменить"
+    return dictionary
+}
+
+public let defaultPresentationStrings = PresentationStrings(primaryComponent:""",
+        "Override the abbreviated Russian Edit label in the default locale",
+    )
+    replace_once(
+        default_strings,
+        'dict: NSDictionary(contentsOf: URL(fileURLWithPath: getAppBundle().path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: "ru")!)) as! [String : String]), secondaryComponent:',
+        'dict: nagramiXDefaultRussianDictionary()), secondaryComponent:',
+        "Use the corrected Russian dictionary on clean install",
     )
 
     presentation_theme_settings = source / "submodules" / "TelegramUIPreferences" / "Sources" / "PresentationThemeSettings.swift"
@@ -56,11 +96,41 @@ def apply_features(source: Path) -> None:
     presentation_data = source / "submodules" / "TelegramPresentationData" / "Sources" / "PresentationData.swift"
     replace_once(
         presentation_data,
+        "public func dictFromLocalization(_ value: Localization) -> [String: String] {",
+        "public func dictFromLocalization(_ value: Localization, languageCode: String? = nil) -> [String: String] {",
+        "Pass locale identity into downloaded localization conversion",
+    )
+    replace_once(
+        presentation_data,
+        """    return dict
+}
+
+private func currentDateTimeFormat()""",
+        """    if languageCode?.lowercased().hasPrefix("ru") == true {
+        dict["Common.Edit"] = "Изменить"
+    }
+    return dict
+}
+
+private func currentDateTimeFormat()""",
+        "Correct every user-facing Edit action in the Russian locale",
+    )
+    presentation_data_text = presentation_data.read_text(encoding="utf-8")
+    presentation_data_text = presentation_data_text.replace(
+        "dictFromLocalization(localizationSettings.primaryComponent.localization)",
+        "dictFromLocalization(localizationSettings.primaryComponent.localization, languageCode: localizationSettings.primaryComponent.languageCode)",
+    ).replace(
+        "dictFromLocalization($0.localization)",
+        "dictFromLocalization($0.localization, languageCode: $0.languageCode)",
+    )
+    presentation_data.write_text(presentation_data_text, encoding="utf-8")
+    replace_once(
+        presentation_data,
         """        var effectiveChatWallpaper: TelegramWallpaper = (themeSettings.themeSpecificChatWallpapers[coloredThemeIndex(reference: effectiveTheme, accentColor: effectiveColors)] ?? themeSettings.themeSpecificChatWallpapers[effectiveTheme.index]) ?? theme.chat.defaultWallpaper
         if case .builtin = effectiveChatWallpaper {
 """,
         """        var effectiveChatWallpaper: TelegramWallpaper = (themeSettings.themeSpecificChatWallpapers[coloredThemeIndex(reference: effectiveTheme, accentColor: effectiveColors)] ?? themeSettings.themeSpecificChatWallpapers[effectiveTheme.index]) ?? theme.chat.defaultWallpaper
-        if internalData.presentationThemeSettings == nil {
+        if themeSettings.theme == .builtin(.night) && themeSettings.themeSpecificChatWallpapers.isEmpty {
             effectiveChatWallpaper = defaultBuiltinWallpaper(data: .variant8, colors: [0x10b997, 0x785cff, 0xf09a35, 0x5dcc47], intensity: -75)
         }
         if case .builtin = effectiveChatWallpaper {
@@ -73,7 +143,7 @@ def apply_features(source: Path) -> None:
         if let themeSpecificWallpaper = themeSpecificWallpaper {
 """,
         """        var currentWallpaper: TelegramWallpaper
-        if sharedData.entries[ApplicationSpecificSharedDataKeys.presentationThemeSettings] == nil {
+        if themeSettings.theme == .builtin(.night) && themeSettings.themeSpecificChatWallpapers.isEmpty {
             currentWallpaper = defaultBuiltinWallpaper(data: .variant8, colors: [0x10b997, 0x785cff, 0xf09a35, 0x5dcc47], intensity: -75)
         } else if let themeSpecificWallpaper = themeSpecificWallpaper {
 """,
@@ -761,6 +831,30 @@ def apply_features(source: Path) -> None:
 """,
         "NagramiX settings row",
     )
+    replace_once(
+        settings_items,
+        """    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.Settings_Support, icon: PresentationResourcesSettings.support, action: {
+        interaction.openSettings(.support)
+    }))
+    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.Settings_FAQ, icon: PresentationResourcesSettings.faq, action: {
+        interaction.openSettings(.faq)
+    }))
+    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.Settings_Tips, icon: PresentationResourcesSettings.tips, action: {
+        interaction.openSettings(.tips)
+    }))
+""",
+        """    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 0, text: presentationData.strings.nagramiXFeatures, icon: PresentationResourcesSettings.nagramiXFeatures, action: {
+        interaction.openSettings(.nagramiXFeatures)
+    }))
+    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 1, text: presentationData.strings.nagramiXUpdates, icon: PresentationResourcesSettings.nagramiXUpdates, action: {
+        interaction.openSettings(.nagramiXUpdates)
+    }))
+    items[.support]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.nagramiXHelp, icon: PresentationResourcesSettings.messages, action: {
+        interaction.openSettings(.nagramiXHelp)
+    }))
+""",
+        "Replace Telegram support rows with the NagramiX information block",
+    )
 
     peer_info_screen = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoScreen" / "Sources" / "PeerInfoScreen.swift"
     replace_once(
@@ -768,6 +862,12 @@ def apply_features(source: Path) -> None:
         "    case profile\n    case premiumManagement\n",
         "    case profile\n    case nagramix\n    case premiumManagement\n",
         "NagramiX settings route",
+    )
+    replace_once(
+        peer_info_screen,
+        "    case support\n    case faq\n    case tips\n",
+        "    case support\n    case faq\n    case tips\n    case nagramiXFeatures\n    case nagramiXUpdates\n    case nagramiXHelp\n",
+        "NagramiX information routes",
     )
 
     settings_actions = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoScreen" / "Sources" / "PeerInfoScreenSettingsActions.swift"
@@ -782,6 +882,24 @@ def apply_features(source: Path) -> None:
             push(PeerInfoStoryGridScreen(context: self.context, peerId: self.context.account.peerId, scope: .saved))
 """,
         "NagramiX settings navigation",
+    )
+    replace_once(
+        settings_actions,
+        """        case .watch:
+            push(watchSettingsController(context: self.context))
+        case .support:
+""",
+        """        case .watch:
+            push(watchSettingsController(context: self.context))
+        case .nagramiXFeatures:
+            self.context.sharedContext.openExternalUrl(context: self.context, urlContext: .generic, url: "https://NagramiX.ru", forceExternal: true, presentationData: self.presentationData, navigationController: self.controller?.navigationController as? NavigationController, dismissInput: {})
+        case .nagramiXUpdates:
+            self.context.sharedContext.openExternalUrl(context: self.context, urlContext: .generic, url: "https://t.me/NagramiX", forceExternal: false, presentationData: self.presentationData, navigationController: self.controller?.navigationController as? NavigationController, dismissInput: {})
+        case .nagramiXHelp:
+            self.context.sharedContext.openExternalUrl(context: self.context, urlContext: .generic, url: "https://t.me/NagramiX_bot", forceExternal: false, presentationData: self.presentationData, navigationController: self.controller?.navigationController as? NavigationController, dismissInput: {})
+        case .support:
+""",
+        "NagramiX information navigation",
     )
 
     root_controller = source / "submodules" / "TelegramUI" / "Sources" / "TelegramRootController.swift"
@@ -1021,11 +1139,30 @@ def apply_features(source: Path) -> None:
     // An icon-only NagramiX tab uses the vertical space that normally belongs
     // to the title. Keep the original hit area and enlarge only the rendered
     // glyph so all tabs remain aligned and equally tappable.
-    let nagramiXIconOnly = !horizontal && title.isEmpty && NagramiXTabSettings.current.hideTitles
+    let nagramiXIconOnly = !horizontal && NagramiXTabSettings.current.hideTitles
+    let effectiveTitle = nagramiXIconOnly ? "" : title
     let effectiveCentered = centered || nagramiXIconOnly
     let font = horizontal ? Font.regular(13.0) : Font.medium(10.0)
 """,
         "Detect NagramiX icon-only tab layout",
+    )
+    replace_once(
+        tab_bar_item_node,
+        "let titleSize = (title as NSString).boundingRect(",
+        "let titleSize = (effectiveTitle as NSString).boundingRect(",
+        "Persistently suppress tab labels in the renderer",
+    )
+    replace_once(
+        tab_bar_item_node,
+        "(title as NSString).draw(at:",
+        "(effectiveTitle as NSString).draw(at:",
+        "Draw only the effective horizontal tab title",
+    )
+    replace_once(
+        tab_bar_item_node,
+        "(title as NSString).draw(at:",
+        "(effectiveTitle as NSString).draw(at:",
+        "Draw only the effective vertical tab title",
     )
     replace_once(
         tab_bar_item_node,
@@ -1075,6 +1212,125 @@ def apply_features(source: Path) -> None:
 """,
         "Video messages start on the configured camera",
     )
+
+    camera_device = source / "submodules" / "Camera" / "Sources" / "CameraDevice.swift"
+    camera_device_text = camera_device.read_text(encoding="utf-8")
+    camera_device_text = camera_device_text.replace("    }\n    \n    func setZoomDelta", "    }\n\n    func setZoomDelta")
+    camera_device_text = camera_device_text.replace("    }\n    \n    func rampZoom", "    }\n\n    func rampZoom")
+    camera_device.write_text(camera_device_text, encoding="utf-8")
+    replace_once(
+        camera_device,
+        """    func setZoomLevel(_ zoomLevel: CGFloat) {
+        guard let device = self.videoDevice else {
+            return
+        }
+        self.transaction(device) { device in
+            let target = device.neutralZoomFactor + zoomLevel
+            device.videoZoomFactor = self.clampedZoomFactor(target, for: device)
+        }
+    }
+
+    func setZoomDelta(_ zoomDelta: CGFloat) {
+        guard let device = self.videoDevice else {
+            return
+        }
+        self.transaction(device) { device in
+            let target = device.videoZoomFactor * zoomDelta
+            device.videoZoomFactor = self.clampedZoomFactor(target, for: device)
+        }
+    }
+
+    func rampZoom(_ zoomLevel: CGFloat, rate: CGFloat) {
+        guard let device = self.videoDevice else {
+            return
+        }
+        self.transaction(device) { device in
+            let target = self.clampedZoomFactor(zoomLevel, for: device)
+            device.ramp(toVideoZoomFactor: target, withRate: Float(rate))
+        }
+    }
+""",
+        """    func setZoomLevel(_ zoomLevel: CGFloat, keepMainRearLens: Bool = false) {
+        guard let device = self.videoDevice else {
+            return
+        }
+        self.transaction(device) { device in
+            let target = device.neutralZoomFactor + zoomLevel
+            device.videoZoomFactor = self.clampedZoomFactor(target, for: device, keepMainRearLens: keepMainRearLens)
+        }
+    }
+
+    func setZoomDelta(_ zoomDelta: CGFloat, keepMainRearLens: Bool = false) {
+        guard let device = self.videoDevice else {
+            return
+        }
+        self.transaction(device) { device in
+            let target = device.videoZoomFactor * zoomDelta
+            device.videoZoomFactor = self.clampedZoomFactor(target, for: device, keepMainRearLens: keepMainRearLens)
+        }
+    }
+
+    func rampZoom(_ zoomLevel: CGFloat, rate: CGFloat, keepMainRearLens: Bool = false) {
+        guard let device = self.videoDevice else {
+            return
+        }
+        self.transaction(device) { device in
+            let target = self.clampedZoomFactor(zoomLevel, for: device, keepMainRearLens: keepMainRearLens)
+            device.ramp(toVideoZoomFactor: target, withRate: Float(rate))
+        }
+    }
+""",
+        "Keep round-video zoom on the physical main rear lens",
+    )
+    replace_once(
+        camera_device,
+        """    private func clampedZoomFactor(_ value: CGFloat, for device: AVCaptureDevice) -> CGFloat {
+        let minimum = max(1.0, device.minAvailableVideoZoomFactor)
+""",
+        """    private func clampedZoomFactor(_ value: CGFloat, for device: AVCaptureDevice, keepMainRearLens: Bool = false) -> CGFloat {
+        let mainRearMinimum = keepMainRearLens ? device.neutralZoomFactor : 1.0
+        let minimum = max(mainRearMinimum, device.minAvailableVideoZoomFactor)
+""",
+        "Clamp rear round videos to the API-provided neutral wide-camera factor",
+    )
+
+    camera_context = source / "submodules" / "Camera" / "Sources" / "Camera.swift"
+    replace_once(
+        camera_context,
+        """            } else {
+                self.mainDeviceContext?.device.setZoomLevel(zoomLevel)
+            }
+""",
+        """            } else {
+                self.mainDeviceContext?.device.setZoomLevel(zoomLevel, keepMainRearLens: true)
+            }
+""",
+        "Preserve main rear lens for round-video absolute zoom",
+    )
+    replace_once(
+        camera_context,
+        """            } else {
+                self.mainDeviceContext?.device.setZoomDelta(zoomDelta)
+            }
+""",
+        """            } else {
+                self.mainDeviceContext?.device.setZoomDelta(zoomDelta, keepMainRearLens: true)
+            }
+""",
+        "Preserve main rear lens for round-video pinch zoom",
+    )
+    replace_once(
+        camera_context,
+        """            } else {
+                self.mainDeviceContext?.device.rampZoom(zoomLevel, rate: rate)
+            }
+""",
+        """            } else {
+                self.mainDeviceContext?.device.rampZoom(zoomLevel, rate: rate, keepMainRearLens: true)
+            }
+""",
+        "Preserve main rear lens for round-video ramp zoom",
+    )
     replace_once(
         video_message_camera,
         """            let isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: true)
@@ -1102,7 +1358,7 @@ def apply_features(source: Path) -> None:
                     guard case let .chatList(index) = item.item.index else {
 """,
         """                for item in filteredAdditionalItemEntries.reversed() {
-                    if case .proxy = item.promoInfo.content, !NagramiXTabSettings.current.showProxySponsorChannel {
+                    if case .proxy = item.promoInfo.content, NagramiXTabSettings.current.hideProxySponsorChannel {
                         continue
                     }
                     guard case let .chatList(index) = item.item.index else {
@@ -1391,10 +1647,8 @@ def apply_features(source: Path) -> None:
     private var didAnimateIn: Bool = false
     private var isDismissed: Bool = false
     private let nagramiXContent: StoryContentContext
-    private var nagramiXSettingsObserver: NSObjectProtocol?
-    fileprivate var nagramiXPendingConfirmationId: EngineStoryId?
-    private var nagramiXConfirmedStoryIds = Set<EngineStoryId>()
-    private weak var nagramiXConfirmationOverlay: UIView?
+    private var nagramiXPresentationDisposable: Disposable?
+    private var nagramiXIsPresentingConfirmation = false
 """,
         "Story presentation and settings state",
     )
@@ -1418,36 +1672,18 @@ def apply_features(source: Path) -> None:
     )
     replace_once(
         story_container_screen,
-        """        self.context.sharedContext.hasPreloadBlockingContent.set(.single(true))
-    }
-""",
-        """        self.context.sharedContext.hasPreloadBlockingContent.set(.single(true))
-
-        self.nagramiXSettingsObserver = NotificationCenter.default.addObserver(forName: NagramiXTabSettings.changedNotification, object: nil, queue: .main, using: { [weak self] _ in
-            guard let self else { return }
-            self.nagramiXUpdateStoryConfirmation(slice: self.nagramiXContent.stateValue?.slice)
-            self.requestLayout(forceUpdate: true, transition: ContainedViewLayoutTransition.immediate)
-        })
-    }
-""",
-        "Refresh built-in story actions immediately when NagramiX settings change",
-    )
-    replace_once(
-        story_container_screen,
         """    deinit {
         self.context.sharedContext.hasPreloadBlockingContent.set(.single(false))
         self.focusedItemPromise.set(.single(nil))
     }
 """,
         """    deinit {
-        if let nagramiXSettingsObserver = self.nagramiXSettingsObserver {
-            NotificationCenter.default.removeObserver(nagramiXSettingsObserver)
-        }
+        self.nagramiXPresentationDisposable?.dispose()
         self.context.sharedContext.hasPreloadBlockingContent.set(.single(false))
         self.focusedItemPromise.set(.single(nil))
     }
 """,
-        "Clean up story presentation and settings observers",
+        "Clean up deferred story presentation state",
     )
     replace_once(
         story_container_screen,
@@ -1630,62 +1866,76 @@ def apply_features(source: Path) -> None:
     )
     replace_between(
         story_container_screen,
+        "    fileprivate func nagramiXUpdateStoryConfirmation(slice: StoryContentContextState.FocusedSlice?) {",
+        "    public func nagramiXPresent(from parentController: ViewController, action: @escaping () -> Void) {",
+        "",
+        "Remove the unsafe post-open story confirmation overlay",
+    )
+    replace_between(
+        story_container_screen,
         "    public func nagramiXPresent(from parentController: ViewController, action: @escaping () -> Void) {",
         "    public func nagramiXPush(from parentController: ViewController, completion: @escaping () -> Void = {}) {",
         """    public func nagramiXPresent(from parentController: ViewController, action: @escaping () -> Void) {
-        action()
+        guard NagramiXTabSettings.current.confirmStoryViewing else {
+            action()
+            return
+        }
+        guard !self.nagramiXIsPresentingConfirmation else {
+            return
+        }
+
+        let presentForState: (StoryContentContextState) -> Void = { [weak self, weak parentController] state in
+            guard let self, let parentController else {
+                return
+            }
+            guard let slice = state.slice else {
+                action()
+                return
+            }
+            if slice.effectivePeer.id == self.context.account.peerId || slice.item.isSeen {
+                action()
+                return
+            }
+
+            self.nagramiXIsPresentingConfirmation = true
+            let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+            let owner = slice.effectivePeer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
+            let actionSheet = ActionSheetController(presentationData: presentationData)
+            actionSheet.dismissed = { [weak self] _ in
+                self?.nagramiXIsPresentingConfirmation = false
+            }
+            actionSheet.setItemGroups([
+                ActionSheetItemGroup(items: [
+                    ActionSheetTextItem(title: presentationData.strings.nagramiXStoryConfirmationTitle + "\\n" + presentationData.strings.nagramiXStoryConfirmationText(owner: owner)),
+                    ActionSheetButtonItem(title: presentationData.strings.nagramiXViewStoryAction, color: .accent, font: .bold, action: { [weak self, weak actionSheet] in
+                        self?.nagramiXIsPresentingConfirmation = false
+                        actionSheet?.dismissAnimated()
+                        action()
+                    }),
+                ]),
+                ActionSheetItemGroup(items: [
+                    ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                        actionSheet?.dismissAnimated()
+                    }),
+                ]),
+            ])
+            parentController.present(actionSheet, in: .window(.root))
+        }
+
+        if let state = self.nagramiXContent.stateValue {
+            presentForState(state)
+        } else {
+            self.nagramiXPresentationDisposable?.dispose()
+            self.nagramiXPresentationDisposable = (self.nagramiXContent.state
+            |> take(1)
+            |> deliverOnMainQueue).start(next: { state in
+                presentForState(state)
+            })
+        }
     }
 
 """,
-        "Remove the obsolete pre-navigation story confirmation sheet",
-    )
-
-    replace_once(
-        story_container_screen,
-        """                        self.stateValue = stateValue
-""" + "                        \n" + """                        if update {
-""",
-        """                        self.stateValue = stateValue
-                        if let controller = environment.controller() as? StoryContainerScreen {
-                            controller.nagramiXUpdateStoryConfirmation(slice: stateValue?.slice)
-                        }
-""" + "                        \n" + """                        if update {
-""",
-        "Evaluate confirmation for every focused story",
-    )
-    replace_once(
-        story_container_screen,
-        """            var isProgressPaused = false
-            if self.itemSetPanState != nil {
-""",
-        """            var isProgressPaused = false
-            if let controller = environment.controller() as? StoryContainerScreen, controller.nagramiXPendingConfirmationId != nil {
-                isProgressPaused = true
-            }
-            if self.itemSetPanState != nil {
-""",
-        "Pause story playback while confirmation is pending",
-    )
-    replace_once(
-        story_container_screen,
-        """                                markAsSeen: { [weak self] id in
-                                    guard let self, let component = self.component else {
-                                        return
-                                    }
-                                    component.content.markAsSeen(id: id)
-                                },
-""",
-        """                                markAsSeen: { [weak self] id in
-                                    guard let self, let component = self.component else {
-                                        return
-                                    }
-                                    if let controller = self.environment?.controller() as? StoryContainerScreen, controller.nagramiXPendingConfirmationId == id {
-                                        return
-                                    }
-                                    component.content.markAsSeen(id: id)
-                                },
-""",
-        "Do not mark an unconfirmed story as viewed",
+        "Present native confirmation before an unseen external story opens",
     )
 
     replace_once(
@@ -2159,4 +2409,4 @@ filegroup(
         "Expose the NagramiX1 appiconset to rules_apple",
     )
 
-    print("Applied isolated NagramiX 0.2.0 feature overlay")
+    print("Applied isolated NagramiX 0.2.1 feature overlay")
