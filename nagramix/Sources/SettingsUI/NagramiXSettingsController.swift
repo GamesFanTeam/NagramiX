@@ -19,6 +19,7 @@ private final class NagramiXSettingsControllerArguments {
     let updateHideTitles: (Bool) -> Void
     let updateShowSearchButton: (Bool) -> Void
     let updateShowProxyButton: (Bool) -> Void
+    let updateShowProxySponsorChannel: (Bool) -> Void
     let updateUseRearCameraForVideoMessages: (Bool) -> Void
     let updateHideStories: (Bool) -> Void
     let updateDisableStoryCameraSwipe: (Bool) -> Void
@@ -31,6 +32,7 @@ private final class NagramiXSettingsControllerArguments {
         updateHideTitles: @escaping (Bool) -> Void,
         updateShowSearchButton: @escaping (Bool) -> Void,
         updateShowProxyButton: @escaping (Bool) -> Void,
+        updateShowProxySponsorChannel: @escaping (Bool) -> Void,
         updateUseRearCameraForVideoMessages: @escaping (Bool) -> Void,
         updateHideStories: @escaping (Bool) -> Void,
         updateDisableStoryCameraSwipe: @escaping (Bool) -> Void,
@@ -42,6 +44,7 @@ private final class NagramiXSettingsControllerArguments {
         self.updateHideTitles = updateHideTitles
         self.updateShowSearchButton = updateShowSearchButton
         self.updateShowProxyButton = updateShowProxyButton
+        self.updateShowProxySponsorChannel = updateShowProxySponsorChannel
         self.updateUseRearCameraForVideoMessages = updateUseRearCameraForVideoMessages
         self.updateHideStories = updateHideStories
         self.updateDisableStoryCameraSwipe = updateDisableStoryCameraSwipe
@@ -63,6 +66,7 @@ private enum NagramiXSettingsEntry: ItemListNodeEntry {
     case hideTitles(Bool)
     case showSearchButton(Bool)
     case showProxyButton(Bool)
+    case showProxySponsorChannel(Bool)
     case videoMessagesHeader
     case useRearCameraForVideoMessages(Bool)
     case storiesHeader
@@ -73,7 +77,7 @@ private enum NagramiXSettingsEntry: ItemListNodeEntry {
 
     var section: ItemListSectionId {
         switch self {
-        case .tabsHeader, .hideContacts, .hideCalls, .hideTitles, .showSearchButton, .showProxyButton:
+        case .tabsHeader, .hideContacts, .hideCalls, .hideTitles, .showSearchButton, .showProxyButton, .showProxySponsorChannel:
             return NagramiXSettingsSection.tabs.rawValue
         case .videoMessagesHeader, .useRearCameraForVideoMessages:
             return NagramiXSettingsSection.videoMessages.rawValue
@@ -90,6 +94,7 @@ private enum NagramiXSettingsEntry: ItemListNodeEntry {
         case .hideTitles: return 3
         case .showSearchButton: return 4
         case .showProxyButton: return 5
+        case .showProxySponsorChannel: return 6
         case .videoMessagesHeader: return 10
         case .useRearCameraForVideoMessages: return 11
         case .storiesHeader: return 20
@@ -119,6 +124,8 @@ private enum NagramiXSettingsEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: presentationData.strings.nagramiXShowSearchButton, value: value, sectionId: self.section, style: .blocks, updated: arguments.updateShowSearchButton)
         case let .showProxyButton(value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: presentationData.strings.nagramiXShowProxyButton, value: value, sectionId: self.section, style: .blocks, updated: arguments.updateShowProxyButton)
+        case let .showProxySponsorChannel(value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: presentationData.strings.nagramiXShowProxySponsorChannel, value: value, sectionId: self.section, style: .blocks, updated: arguments.updateShowProxySponsorChannel)
         case .videoMessagesHeader:
             return ItemListSectionHeaderItem(presentationData: presentationData, text: presentationData.strings.nagramiXVideoMessagesHeader, sectionId: self.section)
         case let .useRearCameraForVideoMessages(value):
@@ -145,6 +152,7 @@ private func nagramiXSettingsEntries(settings: NagramiXTabSettings) -> [NagramiX
         .hideTitles(settings.hideTitles),
         .showSearchButton(settings.showSearchButton),
         .showProxyButton(settings.showProxyButton),
+        .showProxySponsorChannel(settings.showProxySponsorChannel),
         .videoMessagesHeader,
         .useRearCameraForVideoMessages(settings.useRearCameraForVideoMessages),
         .storiesHeader,
@@ -215,6 +223,9 @@ public func nagramiXSettingsController(context: AccountContext) -> ViewControlle
         },
         updateShowProxyButton: { value in
             update { $0.showProxyButton = value }
+        },
+        updateShowProxySponsorChannel: { value in
+            update { $0.showProxySponsorChannel = value }
         },
         updateUseRearCameraForVideoMessages: { value in
             update { $0.useRearCameraForVideoMessages = value }

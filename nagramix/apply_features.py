@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Apply the isolated NagramiX 0.1.9 feature overlay."""
+"""Apply the isolated NagramiX 0.2.0 feature overlay."""
 
 from __future__ import annotations
 
 import shutil
+import re
 from pathlib import Path
 
 
 def replace_once(path: Path, old: str, new: str, label: str) -> None:
     text = path.read_text(encoding="utf-8")
     if old not in text:
-        raise SystemExit(f"Pinned 0.1.9 patch anchor was not found ({label}): {path}")
+        raise SystemExit(f"Pinned 0.2.0 patch anchor was not found ({label}): {path}")
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
@@ -19,12 +20,71 @@ def replace_between(path: Path, start: str, end: str, new: str, label: str) -> N
     start_index = text.find(start)
     end_index = text.find(end, start_index + len(start))
     if start_index < 0 or end_index < 0:
-        raise SystemExit(f"Pinned 0.1.9 patch range was not found ({label}): {path}")
+        raise SystemExit(f"Pinned 0.2.0 patch range was not found ({label}): {path}")
     path.write_text(text[:start_index] + new + text[end_index:], encoding="utf-8")
+
+
+def localize_debug_titles(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    text = re.sub(r'title: "([^"\\]*(?:\\.[^"\\]*)*)"', lambda match: f'title: presentationData.strings.nagramiXDebugLocalized("{match.group(1)}")', text)
+    text = re.sub(r'title: \.text\("([^"\\]*(?:\\.[^"\\]*)*)"\)', lambda match: f'title: .text(presentationData.strings.nagramiXDebugLocalized("{match.group(1)}"))', text)
+    text = text.replace('text: "Now restart the app"', 'text: presentationData.strings.nagramiXDebugLocalized("Now restart the app")')
+    text = text.replace('text = "Done"', 'text = presentationData.strings.nagramiXDebugLocalized("Done")')
+    text = text.replace('text = "Failed"', 'text = presentationData.strings.nagramiXDebugLocalized("Failed")')
+    path.write_text(text, encoding="utf-8")
 
 
 def apply_features(source: Path) -> None:
     overlay = Path(__file__).resolve().parent
+
+    default_strings = source / "submodules" / "TelegramPresentationData" / "Sources" / "DefaultPresentationStrings.swift"
+    replace_once(
+        default_strings,
+        'PresentationStrings.Component(languageCode: "en", localizedName: "English", pluralizationRulesCode: nil, dict: NSDictionary(contentsOf: URL(fileURLWithPath: getAppBundle().path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: "en")!))',
+        'PresentationStrings.Component(languageCode: "ru", localizedName: "Русский", pluralizationRulesCode: nil, dict: NSDictionary(contentsOf: URL(fileURLWithPath: getAppBundle().path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: "ru")!))',
+        "Use Russian as the clean-install primary localization",
+    )
+
+    presentation_theme_settings = source / "submodules" / "TelegramUIPreferences" / "Sources" / "PresentationThemeSettings.swift"
+    replace_once(
+        presentation_theme_settings,
+        "PresentationThemeSettings(theme: .builtin(.dayClassic), themePreferredBaseTheme:",
+        "PresentationThemeSettings(theme: .builtin(.night), themePreferredBaseTheme:",
+        "Use Telegram's standard dark theme on a clean install",
+    )
+
+    presentation_data = source / "submodules" / "TelegramPresentationData" / "Sources" / "PresentationData.swift"
+    replace_once(
+        presentation_data,
+        """        var effectiveChatWallpaper: TelegramWallpaper = (themeSettings.themeSpecificChatWallpapers[coloredThemeIndex(reference: effectiveTheme, accentColor: effectiveColors)] ?? themeSettings.themeSpecificChatWallpapers[effectiveTheme.index]) ?? theme.chat.defaultWallpaper
+        if case .builtin = effectiveChatWallpaper {
+""",
+        """        var effectiveChatWallpaper: TelegramWallpaper = (themeSettings.themeSpecificChatWallpapers[coloredThemeIndex(reference: effectiveTheme, accentColor: effectiveColors)] ?? themeSettings.themeSpecificChatWallpapers[effectiveTheme.index]) ?? theme.chat.defaultWallpaper
+        if internalData.presentationThemeSettings == nil {
+            effectiveChatWallpaper = defaultBuiltinWallpaper(data: .variant8, colors: [0x10b997, 0x785cff, 0xf09a35, 0x5dcc47], intensity: -75)
+        }
+        if case .builtin = effectiveChatWallpaper {
+""",
+        "Apply the built-in gaming wallpaper only to a clean profile",
+    )
+    replace_once(
+        presentation_data,
+        """        let currentWallpaper: TelegramWallpaper
+        if let themeSpecificWallpaper = themeSpecificWallpaper {
+""",
+        """        var currentWallpaper: TelegramWallpaper
+        if sharedData.entries[ApplicationSpecificSharedDataKeys.presentationThemeSettings] == nil {
+            currentWallpaper = defaultBuiltinWallpaper(data: .variant8, colors: [0x10b997, 0x785cff, 0xf09a35, 0x5dcc47], intensity: -75)
+        } else if let themeSpecificWallpaper = themeSpecificWallpaper {
+""",
+        "Keep the gaming wallpaper active until the user selects an appearance",
+    )
+    replace_once(
+        presentation_data,
+        """    return PresentationData(strings: defaultPresentationStrings, theme: defaultPresentationTheme, autoNightModeTriggered: false, chatWallpaper: defaultPresentationTheme.chat.defaultWallpaper,""",
+        """    return PresentationData(strings: defaultPresentationStrings, theme: defaultDarkPresentationTheme, autoNightModeTriggered: false, chatWallpaper: defaultBuiltinWallpaper(data: .variant8, colors: [0x10b997, 0x785cff, 0xf09a35, 0x5dcc47], intensity: -75),""",
+        "Use dark gaming presentation data before account settings load",
+    )
 
     core_source = overlay / "Sources" / "NagramiXCore"
     core_target = source / "submodules" / "NagramiXCore"
@@ -383,6 +443,254 @@ def apply_features(source: Path) -> None:
         "StoryContainerScreen NagramiXCore dependency",
     )
 
+    debug_settings_build = source / "submodules" / "DebugSettingsUI" / "BUILD"
+    replace_once(
+        debug_settings_build,
+        '        "//submodules/Display:Display",\n',
+        '        "//submodules/Display:Display",\n        "//submodules/NagramiXCore:NagramiXCore",\n',
+        "DebugSettingsUI NagramiXCore dependency",
+    )
+    for debug_source_name in ["DebugController.swift", "DebugAccountsController.swift"]:
+        debug_source = source / "submodules" / "DebugSettingsUI" / "Sources" / debug_source_name
+        replace_once(
+            debug_source,
+            "import TelegramPresentationData\n",
+            "import TelegramPresentationData\nimport NagramiXCore\n",
+            f"{debug_source_name} NagramiXCore import",
+        )
+        localize_debug_titles(debug_source)
+
+    story_content = source / "submodules" / "TelegramUI" / "Components" / "Stories" / "StoryContainerScreen" / "Sources" / "StoryContent.swift"
+    replace_once(
+        story_content,
+        """    public let itemPeer: EnginePeer?
+
+    public init(
+""",
+        """    public let itemPeer: EnginePeer?
+    public let isSeen: Bool
+
+    public init(
+""",
+        "Story items carry their server read state",
+    )
+    replace_once(
+        story_content,
+        """        entityFiles: [EngineMedia.Id: TelegramMediaFile],
+        itemPeer: EnginePeer?
+    ) {
+""",
+        """        entityFiles: [EngineMedia.Id: TelegramMediaFile],
+        itemPeer: EnginePeer?,
+        isSeen: Bool = false
+    ) {
+""",
+        "Add backward-compatible story read-state parameter",
+    )
+    replace_once(
+        story_content,
+        """        self.itemPeer = itemPeer
+    }
+""",
+        """        self.itemPeer = itemPeer
+        self.isSeen = isSeen
+    }
+""",
+        "Store story read state",
+    )
+    replace_once(
+        story_content,
+        """        if lhs.itemPeer != rhs.itemPeer {
+            return false
+        }
+        return true
+""",
+        """        if lhs.itemPeer != rhs.itemPeer {
+            return false
+        }
+        if lhs.isSeen != rhs.isSeen {
+            return false
+        }
+        return true
+""",
+        "Compare story read state",
+    )
+
+    story_chat_content = source / "submodules" / "TelegramUI" / "Components" / "Stories" / "StoryContainerScreen" / "Sources" / "StoryChatContent.swift"
+    replace_once(
+        story_chat_content,
+        """                                entityFiles: extractItemEntityFiles(item: item, allEntityFiles: allEntityFiles),
+                                itemPeer: nil
+                            )
+                        }
+""" + "                        \n" + """                        self.nextItems = nextItems
+""",
+        """                                entityFiles: extractItemEntityFiles(item: item, allEntityFiles: allEntityFiles),
+                                itemPeer: nil,
+                                isSeen: item.id <= (state?.maxReadId ?? 0)
+                            )
+                        }
+""" + "                        \n" + """                        self.nextItems = nextItems
+""",
+        "Carry read state for peer story feed items",
+    )
+    replace_once(
+        story_chat_content,
+        """                                entityFiles: extractItemEntityFiles(item: mappedItem, allEntityFiles: allEntityFiles),
+                                itemPeer: nil
+                            ),
+                            totalCount: totalCount,
+""",
+        """                                entityFiles: extractItemEntityFiles(item: mappedItem, allEntityFiles: allEntityFiles),
+                                itemPeer: nil,
+                                isSeen: mappedItem.id <= (state?.maxReadId ?? 0)
+                            ),
+                            totalCount: totalCount,
+""",
+        "Carry read state for focused peer story",
+    )
+    replace_once(
+        story_chat_content,
+        """                            entityFiles: extractItemEntityFiles(item: stateItem.storyItem, allEntityFiles: state.allEntityFiles),
+                            itemPeer: stateItem.peer
+                        ))
+""",
+        """                            entityFiles: extractItemEntityFiles(item: stateItem.storyItem, allEntityFiles: state.allEntityFiles),
+                            itemPeer: stateItem.peer,
+                            isSeen: stateItem.id.id <= state.maxReadId
+                        ))
+""",
+        "Carry read state for story-list items",
+    )
+    replace_once(
+        story_chat_content,
+        """                                entityFiles: extractItemEntityFiles(item: item.storyItem, allEntityFiles: state.allEntityFiles),
+                                itemPeer: item.peer
+                            ),
+                            totalCount: state.totalCount,
+""",
+        """                                entityFiles: extractItemEntityFiles(item: item.storyItem, allEntityFiles: state.allEntityFiles),
+                                itemPeer: item.peer,
+                                isSeen: item.id.id <= state.maxReadId
+                            ),
+                            totalCount: state.totalCount,
+""",
+        "Carry read state for focused story-list item",
+    )
+    replace_once(
+        story_chat_content,
+        """            item |> mapToSignal { item -> Signal<(Stories.StoredItem?, [PeerId: Peer], [MediaId: TelegramMediaFile], [StoryId: EngineStoryItem?]), NoError> in
+                return context.account.postbox.transaction { transaction -> (Stories.StoredItem?, [PeerId: Peer], [MediaId: TelegramMediaFile], [StoryId: EngineStoryItem?]) in
+                    guard let item else {
+                        return (nil, [:], [:], [:])
+                    }
+""",
+        """            item |> mapToSignal { item -> Signal<(Stories.StoredItem?, [PeerId: Peer], [MediaId: TelegramMediaFile], [StoryId: EngineStoryItem?], Int32), NoError> in
+                return context.account.postbox.transaction { transaction -> (Stories.StoredItem?, [PeerId: Peer], [MediaId: TelegramMediaFile], [StoryId: EngineStoryItem?], Int32) in
+                    let maxReadId = transaction.getPeerStoryState(peerId: storyId.peerId)?.entry.get(Stories.PeerState.self)?.maxReadId ?? 0
+                    guard let item else {
+                        return (nil, [:], [:], [:], maxReadId)
+                    }
+""",
+        "Load read state for a single deep-linked story",
+    )
+    replace_once(
+        story_chat_content,
+        """                    return (item, peers, allEntityFiles, stories)
+                }
+            },
+""",
+        """                    return (item, peers, allEntityFiles, stories, maxReadId)
+                }
+            },
+""",
+        "Return read state for a single deep-linked story",
+    )
+    replace_once(
+        story_chat_content,
+        """            let (item, peers, allEntityFiles, forwardInfoStories) = itemAndPeers
+""",
+        """            let (item, peers, allEntityFiles, forwardInfoStories, maxReadId) = itemAndPeers
+""",
+        "Unpack single-story read state",
+    )
+    replace_once(
+        story_chat_content,
+        """                    entityFiles: extractItemEntityFiles(item: mappedItem, allEntityFiles: allEntityFiles),
+                    itemPeer: nil
+                )
+                let stateValue = StoryContentContextState(
+""",
+        """                    entityFiles: extractItemEntityFiles(item: mappedItem, allEntityFiles: allEntityFiles),
+                    itemPeer: nil,
+                    isSeen: mappedItem.id <= maxReadId
+                )
+                let stateValue = StoryContentContextState(
+""",
+        "Do not reconfirm an already-viewed deep-linked story",
+    )
+    replace_once(
+        story_chat_content,
+        """            |> mapToSignal { _, views, data, preferHighQualityStories -> Signal<(CombinedView, [PeerId: Peer], (EngineGlobalNotificationSettings, Bool), [MediaId: TelegramMediaFile], [StoryId: EngineStoryItem?], Bool), NoError> in
+""",
+        """            |> mapToSignal { _, views, data, preferHighQualityStories -> Signal<(CombinedView, [PeerId: Peer], (EngineGlobalNotificationSettings, Bool), [MediaId: TelegramMediaFile], [StoryId: EngineStoryItem?], Bool, Int32), NoError> in
+""",
+        "Expose repost-chain read state in the signal type",
+    )
+    replace_once(
+        story_chat_content,
+        """                return context.account.postbox.transaction { transaction -> (CombinedView, [PeerId: Peer], (EngineGlobalNotificationSettings, Bool), [MediaId: TelegramMediaFile], [StoryId: EngineStoryItem?], Bool) in
+""",
+        """                return context.account.postbox.transaction { transaction -> (CombinedView, [PeerId: Peer], (EngineGlobalNotificationSettings, Bool), [MediaId: TelegramMediaFile], [StoryId: EngineStoryItem?], Bool, Int32) in
+""",
+        "Load read state for repost-chain stories",
+    )
+    replace_once(
+        story_chat_content,
+        """                    return (views, peers, data, allEntityFiles, forwardInfoStories, preferHighQualityStories)
+                }
+            }
+            |> deliverOnMainQueue).startStrict(next: { [weak self] views, peers, data, allEntityFiles, forwardInfoStories, preferHighQualityStories in
+""",
+        """                    let maxReadId = transaction.getPeerStoryState(peerId: peerId)?.entry.get(Stories.PeerState.self)?.maxReadId ?? 0
+                    return (views, peers, data, allEntityFiles, forwardInfoStories, preferHighQualityStories, maxReadId)
+                }
+            }
+            |> deliverOnMainQueue).startStrict(next: { [weak self] views, peers, data, allEntityFiles, forwardInfoStories, preferHighQualityStories, maxReadId in
+""",
+        "Return repost-chain story read state",
+    )
+    replace_once(
+        story_chat_content,
+        """                                entityFiles: extractItemEntityFiles(item: item, allEntityFiles: allEntityFiles),
+                                itemPeer: nil
+                            )
+                        }
+""",
+        """                                entityFiles: extractItemEntityFiles(item: item, allEntityFiles: allEntityFiles),
+                                itemPeer: nil,
+                                isSeen: item.id <= maxReadId
+                            )
+                        }
+""",
+        "Carry read state for repost-chain items",
+    )
+    replace_once(
+        story_chat_content,
+        """                                entityFiles: extractItemEntityFiles(item: mappedItem, allEntityFiles: allEntityFiles),
+                                itemPeer: nil
+                            ),
+                            totalCount: totalCount,
+""",
+        """                                entityFiles: extractItemEntityFiles(item: mappedItem, allEntityFiles: allEntityFiles),
+                                itemPeer: nil,
+                                isSeen: mappedItem.id <= maxReadId
+                            ),
+                            totalCount: totalCount,
+""",
+        "Carry read state for the focused repost-chain story",
+    )
+
     settings_items = source / "submodules" / "TelegramUI" / "Components" / "PeerInfo" / "PeerInfoScreen" / "Sources" / "PeerInfoSettingsItems.swift"
     replace_once(
         settings_items,
@@ -658,6 +966,60 @@ def apply_features(source: Path) -> None:
         "Tab bar search visibility",
     )
 
+    tab_bar_item_node = source / "submodules" / "TabBarUI" / "Sources" / "TabBarNode.swift"
+    replace_once(
+        tab_bar_item_node,
+        "import TelegramPresentationData\n",
+        "import TelegramPresentationData\nimport NagramiXCore\n",
+        "Tab bar item NagramiXCore import",
+    )
+    replace_once(
+        tab_bar_item_node,
+        """private func tabBarItemImage(_ image: UIImage?, title: String, backgroundColor: UIColor, tintColor: UIColor, horizontal: Bool, imageMode: Bool, centered: Bool = false) -> (UIImage, CGFloat) {
+    let font = horizontal ? Font.regular(13.0) : Font.medium(10.0)
+""",
+        """private func tabBarItemImage(_ image: UIImage?, title: String, backgroundColor: UIColor, tintColor: UIColor, horizontal: Bool, imageMode: Bool, centered: Bool = false) -> (UIImage, CGFloat) {
+    // An icon-only NagramiX tab uses the vertical space that normally belongs
+    // to the title. Keep the original hit area and enlarge only the rendered
+    // glyph so all tabs remain aligned and equally tappable.
+    let nagramiXIconOnly = !horizontal && title.isEmpty && NagramiXTabSettings.current.hideTitles
+    let effectiveCentered = centered || nagramiXIconOnly
+    let font = horizontal ? Font.regular(13.0) : Font.medium(10.0)
+""",
+        "Detect NagramiX icon-only tab layout",
+    )
+    replace_once(
+        tab_bar_item_node,
+        """        } else {
+            imageSize = image.size
+        }
+""",
+        """        } else if nagramiXIconOnly {
+            let factor: CGFloat = 1.18
+            imageSize = CGSize(width: floor(image.size.width * factor), height: floor(image.size.height * factor))
+        } else {
+            imageSize = image.size
+        }
+""",
+        "Scale icon-only tab glyphs proportionally",
+    )
+    replace_once(
+        tab_bar_item_node,
+        """        let width =  max(1.0, centered ? imageSize.width : max(ceil(titleSize.width), imageSize.width), 1.0)
+""",
+        """        let width = max(1.0, effectiveCentered ? imageSize.width : max(ceil(titleSize.width), imageSize.width), 1.0)
+""",
+        "Center icon-only tab canvas",
+    )
+    replace_once(
+        tab_bar_item_node,
+        """                imageRect = CGRect(origin: CGPoint(x: floorToScreenPixels((size.width - imageSize.width) / 2.0), y: centered ? floor((size.height - imageSize.height) / 2.0) : 0.0), size: imageSize)
+""",
+        """                imageRect = CGRect(origin: CGPoint(x: floorToScreenPixels((size.width - imageSize.width) / 2.0), y: effectiveCentered ? floor((size.height - imageSize.height) / 2.0) : 0.0), size: imageSize)
+""",
+        "Vertically center icon-only tab glyphs",
+    )
+
     video_message_camera = source / "submodules" / "TelegramUI" / "Components" / "VideoMessageCameraScreen" / "Sources" / "VideoMessageCameraScreen.swift"
     replace_once(
         video_message_camera,
@@ -673,6 +1035,78 @@ def apply_features(source: Path) -> None:
             let isFrontPosition = !prefersRearCamera || !hasRearCamera
 """,
         "Video messages start on the configured camera",
+    )
+    replace_once(
+        video_message_camera,
+        """            let isDualCameraEnabled = Camera.isDualCameraSupported(forRoundVideo: true)
+            let prefersRearCamera = NagramiXTabSettings.current.useRearCameraForVideoMessages
+""",
+        """            let prefersRearCamera = NagramiXTabSettings.current.useRearCameraForVideoMessages
+            // Rear-camera mode must create a rear-only capture session. A dual
+            // session always initializes the front stream as an additional
+            // source and can leak its first frames into the recorded result.
+            let isDualCameraEnabled = !prefersRearCamera && Camera.isDualCameraSupported(forRoundVideo: true)
+""",
+        "Create a rear-only round-video capture session",
+    )
+
+    chat_list_entries = source / "submodules" / "ChatListUI" / "Sources" / "Node" / "ChatListNodeEntries.swift"
+    replace_once(
+        chat_list_entries,
+        "import AccountContext\n",
+        "import AccountContext\nimport NagramiXCore\n",
+        "Chat list entries NagramiXCore import",
+    )
+    replace_once(
+        chat_list_entries,
+        """                for item in filteredAdditionalItemEntries.reversed() {
+                    guard case let .chatList(index) = item.item.index else {
+""",
+        """                for item in filteredAdditionalItemEntries.reversed() {
+                    if case .proxy = item.promoInfo.content, !NagramiXTabSettings.current.showProxySponsorChannel {
+                        continue
+                    }
+                    guard case let .chatList(index) = item.item.index else {
+""",
+        "Hide only the proxy sponsor entry when requested",
+    )
+
+    chat_list_node = source / "submodules" / "ChatListUI" / "Sources" / "Node" / "ChatListNode.swift"
+    replace_once(
+        chat_list_node,
+        "    private let statePromise: ValuePromise<ChatListNodeState>\n",
+        "    private let statePromise: ValuePromise<ChatListNodeState>\n    private let nagramiXSettingsRevision = ValuePromise<Bool>(false, ignoreRepeated: true)\n    private var nagramiXSettingsRevisionValue = false\n",
+        "Chat list settings revision signal",
+    )
+    replace_once(
+        chat_list_node,
+        """            contacts,
+            chatListFilters,
+            accountIsPremium
+        )
+        |> mapToQueue { (hideArchivedFolderByDefault, displayArchiveIntro, storageInfo, savedMessagesPeer, updateAndFilter, state, contacts, chatListFilters, accountIsPremium) -> Signal<ChatListNodeListViewTransition, NoError> in
+""",
+        """            contacts,
+            chatListFilters,
+            accountIsPremium,
+            self.nagramiXSettingsRevision.get()
+        )
+        |> mapToQueue { (hideArchivedFolderByDefault, displayArchiveIntro, storageInfo, savedMessagesPeer, updateAndFilter, state, contacts, chatListFilters, accountIsPremium, _) -> Signal<ChatListNodeListViewTransition, NoError> in
+""",
+        "Rebuild chat list entries after NagramiX settings changes",
+    )
+    replace_once(
+        chat_list_node,
+        """    public func updateState(_ f: (ChatListNodeState) -> ChatListNodeState) {
+""",
+        """    public func nagramiXRefreshSettings() {
+        self.nagramiXSettingsRevisionValue = !self.nagramiXSettingsRevisionValue
+        self.nagramiXSettingsRevision.set(self.nagramiXSettingsRevisionValue)
+    }
+
+    public func updateState(_ f: (ChatListNodeState) -> ChatListNodeState) {
+""",
+        "Expose an immediate NagramiX chat-list refresh",
     )
 
     camera_source = source / "submodules" / "Camera" / "Sources" / "Camera.swift"
@@ -697,6 +1131,71 @@ def apply_features(source: Path) -> None:
         "import TelegramPresentationData\n",
         "import TelegramPresentationData\nimport NagramiXCore\n",
         "Chat list NagramiXCore import",
+    )
+    replace_once(
+        chat_list_controller,
+        '''                    } else {
+                        languageCode = "en"
+                    }
+                    return languageCode
+''',
+        '''                    } else {
+                        languageCode = "ru"
+                    }
+                    return languageCode
+''',
+        "Keep the clean-install localization state consistent with Russian presentation strings",
+    )
+    replace_once(
+        chat_list_controller,
+        '''            |> mapToSignal({ value -> Signal<(String, SuggestedLocalizationInfo)?, NoError> in
+                guard let suggestedLocalization = value.1, !suggestedLocalization.isSeen && suggestedLocalization.languageCode != "en" && suggestedLocalization.languageCode != value.0 else {
+                    return .single(nil)
+                }
+                return context.engine.localization.suggestedLocalizationInfo(languageCode: suggestedLocalization.languageCode, extractKeys: LanguageSuggestionControllerStrings.keys)
+                |> map({ suggestedLocalization -> (String, SuggestedLocalizationInfo)? in
+                    return (value.0, suggestedLocalization)
+                })
+            })
+''',
+        '''            |> mapToSignal({ value -> Signal<(String, SuggestedLocalizationInfo)?, NoError> in
+                let currentLanguageCode = value.0.lowercased()
+                let preferredLanguageCode = Locale.preferredLanguages.first
+                    .map { $0.replacingOccurrences(of: "_", with: "-").split(separator: "-").first.map(String.init) ?? $0 }
+                    .map { $0.lowercased() }
+                let systemSuggestionKey = preferredLanguageCode.flatMap { "nagramix.localization.systemSuggestion.\\($0)" }
+
+                let requestedLanguageCode: String?
+                if let preferredLanguageCode,
+                   preferredLanguageCode != currentLanguageCode,
+                   !UserDefaults.standard.bool(forKey: systemSuggestionKey ?? "") {
+                    requestedLanguageCode = preferredLanguageCode
+                } else if let suggestedLocalization = value.1,
+                          !suggestedLocalization.isSeen,
+                          suggestedLocalization.languageCode != currentLanguageCode {
+                    requestedLanguageCode = suggestedLocalization.languageCode
+                } else {
+                    requestedLanguageCode = nil
+                }
+                guard let requestedLanguageCode else {
+                    return .single(nil)
+                }
+                return context.engine.localization.suggestedLocalizationInfo(languageCode: requestedLanguageCode, extractKeys: LanguageSuggestionControllerStrings.keys)
+                |> map({ suggestedLocalization -> (String, SuggestedLocalizationInfo)? in
+                    guard suggestedLocalization.availableLocalizations.contains(where: { $0.languageCode == requestedLanguageCode }) else {
+                        if let systemSuggestionKey {
+                            UserDefaults.standard.set(true, forKey: systemSuggestionKey)
+                        }
+                        return nil
+                    }
+                    if let systemSuggestionKey, requestedLanguageCode == preferredLanguageCode {
+                        UserDefaults.standard.set(true, forKey: systemSuggestionKey)
+                    }
+                    return (value.0, suggestedLocalization)
+                })
+            })
+''',
+        "Suggest the supported iPhone language once while keeping Russian as the initial language",
     )
     replace_once(
         chat_list_controller,
@@ -765,6 +1264,7 @@ def apply_features(source: Path) -> None:
                 return
             }
             self.orderedStorySubscriptions = NagramiXTabSettings.current.hideStories ? nil : (self.nagramiXLastOrderedStorySubscriptions ?? self.rawStorySubscriptions)
+            self.chatListDisplayNode.nagramiXRefreshSettings()
             let transition: ContainedViewLayoutTransition = self.didAppear ? .animated(duration: 0.4, curve: .spring) : .immediate
             self.chatListDisplayNode.temporaryContentOffsetChangeTransition = transition
             self.requestLayout(transition: transition)
@@ -849,13 +1349,13 @@ def apply_features(source: Path) -> None:
     private var isDismissed: Bool = false
 """,
         """    private let context: AccountContext
-    private static var nagramiXConfirmationParentIds = Set<ObjectIdentifier>()
     private var didAnimateIn: Bool = false
     private var isDismissed: Bool = false
     private let nagramiXContent: StoryContentContext
-    private weak var nagramiXTransitionSourceView: UIView?
-    private var nagramiXPresentationDisposable: Disposable?
     private var nagramiXSettingsObserver: NSObjectProtocol?
+    fileprivate var nagramiXPendingConfirmationId: EngineStoryId?
+    private var nagramiXConfirmedStoryIds = Set<EngineStoryId>()
+    private weak var nagramiXConfirmationOverlay: UIView?
 """,
         "Story presentation and settings state",
     )
@@ -870,7 +1370,6 @@ def apply_features(source: Path) -> None:
         """    ) {
         self.context = context
         self.nagramiXContent = content
-        self.nagramiXTransitionSourceView = transitionIn?.sourceView
 
         super.init(context: context, component: StoryContainerScreenComponent(
             context: context,
@@ -886,7 +1385,9 @@ def apply_features(source: Path) -> None:
         """        self.context.sharedContext.hasPreloadBlockingContent.set(.single(true))
 
         self.nagramiXSettingsObserver = NotificationCenter.default.addObserver(forName: NagramiXTabSettings.changedNotification, object: nil, queue: .main, using: { [weak self] _ in
-            self?.requestLayout(forceUpdate: true, transition: ContainedViewLayoutTransition.immediate)
+            guard let self else { return }
+            self.nagramiXUpdateStoryConfirmation(slice: self.nagramiXContent.stateValue?.slice)
+            self.requestLayout(forceUpdate: true, transition: ContainedViewLayoutTransition.immediate)
         })
     }
 """,
@@ -900,7 +1401,6 @@ def apply_features(source: Path) -> None:
     }
 """,
         """    deinit {
-        self.nagramiXPresentationDisposable?.dispose()
         if let nagramiXSettingsObserver = self.nagramiXSettingsObserver {
             NotificationCenter.default.removeObserver(nagramiXSettingsObserver)
         }
@@ -920,7 +1420,84 @@ def apply_features(source: Path) -> None:
         super.containerLayoutUpdated(layout, transition: transition)
     }
 
+    fileprivate func nagramiXUpdateStoryConfirmation(slice: StoryContentContextState.FocusedSlice?) {
+        guard NagramiXTabSettings.current.confirmStoryViewing, let slice, slice.peer.id != self.context.account.peerId, !slice.item.isSeen, !self.nagramiXConfirmedStoryIds.contains(slice.item.id) else {
+            self.nagramiXPendingConfirmationId = nil
+            self.nagramiXConfirmationOverlay?.removeFromSuperview()
+            return
+        }
+        guard self.nagramiXPendingConfirmationId != slice.item.id else { return }
+        self.nagramiXPendingConfirmationId = slice.item.id
+        self.nagramiXConfirmationOverlay?.removeFromSuperview()
+
+        let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+        let overlay = UIView()
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        overlay.backgroundColor = UIColor(white: 0.0, alpha: 0.30)
+        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+        blur.translatesAutoresizingMaskIntoConstraints = false
+        blur.isUserInteractionEnabled = false
+        overlay.addSubview(blur)
+        let closeButton = UIButton(type: .system)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setTitle("×", for: .normal)
+        closeButton.titleLabel?.font = UIFont.systemFont(ofSize: 42.0, weight: .light)
+        closeButton.tintColor = .white
+        closeButton.addTarget(self, action: #selector(self.nagramiXCancelStoryConfirmation), for: .touchUpInside)
+        overlay.addSubview(closeButton)
+        let titleLabel = UILabel()
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.text = presentationData.strings.nagramiXStoryConfirmationTitle
+        titleLabel.textColor = .white
+        titleLabel.font = UIFont.systemFont(ofSize: 23.0, weight: .semibold)
+        titleLabel.textAlignment = .center
+        overlay.addSubview(titleLabel)
+        let bodyLabel = UILabel()
+        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
+        bodyLabel.text = presentationData.strings.nagramiXStoryConfirmationText(owner: slice.effectivePeer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder))
+        bodyLabel.textColor = UIColor(white: 0.78, alpha: 1.0)
+        bodyLabel.font = UIFont.systemFont(ofSize: 17.0)
+        bodyLabel.textAlignment = .center
+        bodyLabel.numberOfLines = 0
+        overlay.addSubview(bodyLabel)
+        let viewButton = UIButton(type: .system)
+        viewButton.translatesAutoresizingMaskIntoConstraints = false
+        viewButton.setTitle(presentationData.strings.nagramiXViewStoryAction, for: .normal)
+        viewButton.setTitleColor(.white, for: .normal)
+        viewButton.titleLabel?.font = UIFont.systemFont(ofSize: 19.0, weight: .semibold)
+        viewButton.backgroundColor = presentationData.theme.list.itemAccentColor
+        viewButton.layer.cornerRadius = 14.0
+        viewButton.addTarget(self, action: #selector(self.nagramiXAcceptStoryConfirmation), for: .touchUpInside)
+        overlay.addSubview(viewButton)
+        self.view.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.leadingAnchor.constraint(equalTo: self.view.leadingAnchor), overlay.trailingAnchor.constraint(equalTo: self.view.trailingAnchor), overlay.topAnchor.constraint(equalTo: self.view.topAnchor), overlay.bottomAnchor.constraint(equalTo: self.view.bottomAnchor),
+            blur.leadingAnchor.constraint(equalTo: overlay.leadingAnchor), blur.trailingAnchor.constraint(equalTo: overlay.trailingAnchor), blur.topAnchor.constraint(equalTo: overlay.topAnchor), blur.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+            closeButton.trailingAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.trailingAnchor, constant: -18.0), closeButton.topAnchor.constraint(equalTo: overlay.safeAreaLayoutGuide.topAnchor, constant: 4.0), closeButton.widthAnchor.constraint(equalToConstant: 48.0), closeButton.heightAnchor.constraint(equalToConstant: 48.0),
+            titleLabel.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 32.0), titleLabel.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -32.0), titleLabel.centerYAnchor.constraint(equalTo: overlay.centerYAnchor, constant: -52.0),
+            bodyLabel.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 44.0), bodyLabel.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -44.0), bodyLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 10.0),
+            viewButton.leadingAnchor.constraint(equalTo: overlay.leadingAnchor, constant: 44.0), viewButton.trailingAnchor.constraint(equalTo: overlay.trailingAnchor, constant: -44.0), viewButton.topAnchor.constraint(equalTo: bodyLabel.bottomAnchor, constant: 48.0), viewButton.heightAnchor.constraint(equalToConstant: 58.0)
+        ])
+        self.nagramiXConfirmationOverlay = overlay
+        self.requestLayout(forceUpdate: true, transition: .immediate)
+    }
+
+    @objc private func nagramiXCancelStoryConfirmation() {
+        self.dismiss()
+    }
+
+    @objc private func nagramiXAcceptStoryConfirmation() {
+        guard let id = self.nagramiXPendingConfirmationId else { return }
+        self.nagramiXConfirmedStoryIds.insert(id)
+        self.nagramiXPendingConfirmationId = nil
+        self.nagramiXConfirmationOverlay?.removeFromSuperview()
+        self.nagramiXContent.markAsSeen(id: id)
+        self.requestLayout(forceUpdate: true, transition: .immediate)
+    }
+
     public func nagramiXPresent(from parentController: ViewController, action: @escaping () -> Void) {
+        action()
+        return
         guard NagramiXTabSettings.current.confirmStoryViewing else {
             action()
             return
@@ -1011,6 +1588,65 @@ def apply_features(source: Path) -> None:
     }
 """,
         "Confirm an external story before it is pushed onto the navigation stack",
+    )
+    replace_between(
+        story_container_screen,
+        "    public func nagramiXPresent(from parentController: ViewController, action: @escaping () -> Void) {",
+        "    public func nagramiXPush(from parentController: ViewController, completion: @escaping () -> Void = {}) {",
+        """    public func nagramiXPresent(from parentController: ViewController, action: @escaping () -> Void) {
+        action()
+    }
+
+""",
+        "Remove the obsolete pre-navigation story confirmation sheet",
+    )
+
+    replace_once(
+        story_container_screen,
+        """                        self.stateValue = stateValue
+""" + "                        \n" + """                        if update {
+""",
+        """                        self.stateValue = stateValue
+                        if let controller = environment.controller() as? StoryContainerScreen {
+                            controller.nagramiXUpdateStoryConfirmation(slice: stateValue?.slice)
+                        }
+""" + "                        \n" + """                        if update {
+""",
+        "Evaluate confirmation for every focused story",
+    )
+    replace_once(
+        story_container_screen,
+        """            var isProgressPaused = false
+            if self.itemSetPanState != nil {
+""",
+        """            var isProgressPaused = false
+            if let controller = environment.controller() as? StoryContainerScreen, controller.nagramiXPendingConfirmationId != nil {
+                isProgressPaused = true
+            }
+            if self.itemSetPanState != nil {
+""",
+        "Pause story playback while confirmation is pending",
+    )
+    replace_once(
+        story_container_screen,
+        """                                markAsSeen: { [weak self] id in
+                                    guard let self, let component = self.component else {
+                                        return
+                                    }
+                                    component.content.markAsSeen(id: id)
+                                },
+""",
+        """                                markAsSeen: { [weak self] id in
+                                    guard let self, let component = self.component else {
+                                        return
+                                    }
+                                    if let controller = self.environment?.controller() as? StoryContainerScreen, controller.nagramiXPendingConfirmationId == id {
+                                        return
+                                    }
+                                    component.content.markAsSeen(id: id)
+                                },
+""",
+        "Do not mark an unconfirmed story as viewed",
     )
 
     replace_once(
@@ -1484,4 +2120,4 @@ filegroup(
         "Expose the NagramiX1 appiconset to rules_apple",
     )
 
-    print("Applied isolated NagramiX 0.1.9 feature overlay")
+    print("Applied isolated NagramiX 0.2.0 feature overlay")

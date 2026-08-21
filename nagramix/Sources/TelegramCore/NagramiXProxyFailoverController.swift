@@ -4,258 +4,276 @@ import MtProtoKit
 
 private enum NagramiXNetworkSettingsBridge {
     static let changedNotification = Notification.Name("NagramiXSettingsChanged")
-    private static let autoSwitchEnabledKey = "nagramix.network.proxyAutoSwitchEnabled"
-    private static let autoSwitchTimeoutKey = "nagramix.network.proxyAutoSwitchTimeout"
-
     static var proxyAutoSwitchEnabled: Bool {
-        return UserDefaults.standard.object(forKey: self.autoSwitchEnabledKey) as? Bool ?? false
+        return UserDefaults.standard.object(forKey: "nagramix.network.proxyAutoSwitchEnabled") as? Bool ?? false
     }
-
     static var proxyAutoSwitchTimeout: Int {
-        let value = UserDefaults.standard.integer(forKey: self.autoSwitchTimeoutKey)
+        let value = UserDefaults.standard.integer(forKey: "nagramix.network.proxyAutoSwitchTimeout")
         return [15, 30, 60].contains(value) ? value : 15
     }
 }
 
+/// Queue-confined state machine. Every callback carries a generation token,
+/// therefore a stale timer can never override a manual proxy selection.
 final class NagramiXProxyFailoverController {
-    private static let sharedQueue = Queue(name: "org.nagramix.proxy-failover")
-    private static weak var failoverOwner: NagramiXProxyFailoverController?
+    private enum Phase {
+        case idle
+        case waiting(origin: ProxyServerSettings, token: UInt64)
+        case checking(origin: ProxyServerSettings, candidates: [ProxyServerSettings], index: Int, token: UInt64)
+        case applying(origin: ProxyServerSettings, candidates: [ProxyServerSettings], index: Int, candidate: ProxyServerSettings, token: UInt64)
+        case connecting(origin: ProxyServerSettings, candidates: [ProxyServerSettings], index: Int, candidate: ProxyServerSettings, token: UInt64)
 
+        var expectedServer: ProxyServerSettings? {
+            switch self {
+            case let .applying(_, _, _, candidate, _), let .connecting(_, _, _, candidate, _):
+                return candidate
+            default:
+                return nil
+            }
+        }
+    }
+
+    private static let sharedQueue = Queue(name: "org.nagramix.proxy-failover")
+    private static weak var owner: NagramiXProxyFailoverController?
     private let queue = NagramiXProxyFailoverController.sharedQueue
     private var accountManager: AccountManager<TelegramAccountManagerTypes>?
     private var network: Network?
     private var settingsDisposable: Disposable?
     private var statusDisposable: Disposable?
+    private var applyDisposable: Disposable?
     private var probeDisposable: MTDisposable?
-    private var settingsObserver: NSObjectProtocol?
-    private var failureTimer: SwiftSignalKit.Timer?
-    private var candidateTimer: SwiftSignalKit.Timer?
-    private var proxySettings: ProxySettings = .defaultSettings
-    private var connectionStatus: ConnectionStatus = .waitingForNetwork
-    private var generation: Int = 0
-    private var expectedActiveServer: ProxyServerSettings?
-    private var suppressedFailureServer: ProxyServerSettings?
-    private var remainingCandidates: [ProxyServerSettings] = []
+    private var observer: NSObjectProtocol?
+    private var timer: SwiftSignalKit.Timer?
+    private var settings: ProxySettings = .defaultSettings
+    private var status: ConnectionStatus = .waitingForNetwork
+    private var phase: Phase = .idle
+    private var generation: UInt64 = 0
+    private var suppressedServer: ProxyServerSettings?
 
     init() {
     }
 
     func start(accountManager: AccountManager<TelegramAccountManagerTypes>, network: Network) {
         self.queue.async { [weak self] in
-            guard let self else {
-                return
-            }
+            guard let self else { return }
             self.stopInternal()
             self.accountManager = accountManager
             self.network = network
-
             self.settingsDisposable = (accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
-            |> deliverOn(self.queue)).start(next: { [weak self] sharedData in
-                guard let self else {
-                    return
-                }
-                let settings = sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) ?? .defaultSettings
-                self.updateProxySettings(settings)
+            |> deliverOn(self.queue)).start(next: { [weak self] data in
+                self?.updateSettings(data.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) ?? .defaultSettings)
             })
             self.statusDisposable = (network.connectionStatus
             |> deliverOn(self.queue)).start(next: { [weak self] status in
-                self?.updateConnectionStatus(status)
+                self?.updateStatus(status)
             })
-            self.settingsObserver = NotificationCenter.default.addObserver(forName: NagramiXNetworkSettingsBridge.changedNotification, object: nil, queue: nil, using: { [weak self] _ in
+            self.observer = NotificationCenter.default.addObserver(forName: NagramiXNetworkSettingsBridge.changedNotification, object: nil, queue: nil, using: { [weak self] _ in
                 self?.queue.async {
-                    self?.reevaluate()
+                    guard let self else { return }
+                    if !NagramiXNetworkSettingsBridge.proxyAutoSwitchEnabled {
+                        self.invalidate(suppressCurrent: false)
+                    }
+                    self.reevaluate()
                 }
             })
         }
     }
 
     func stop() {
-        self.queue.async { [weak self] in
-            self?.stopInternal()
-        }
+        self.queue.async { [weak self] in self?.stopInternal() }
     }
 
     private func stopInternal() {
-        self.cancelFailureProcess(incrementGeneration: true)
+        self.invalidate(suppressCurrent: false)
         self.settingsDisposable?.dispose()
         self.settingsDisposable = nil
         self.statusDisposable?.dispose()
         self.statusDisposable = nil
-        if let settingsObserver = self.settingsObserver {
-            NotificationCenter.default.removeObserver(settingsObserver)
-            self.settingsObserver = nil
+        if let observer = self.observer {
+            NotificationCenter.default.removeObserver(observer)
+            self.observer = nil
         }
+        self.accountManager = nil
+        self.network = nil
     }
 
-    private func updateProxySettings(_ settings: ProxySettings) {
-        let previousActiveServer = self.proxySettings.activeServer
-        self.proxySettings = settings
-        if previousActiveServer != settings.activeServer {
-            if self.expectedActiveServer == settings.activeServer {
-                // Keep the expected marker until the new connection is either
-                // confirmed online or its confirmation timeout expires.
-            } else {
-                self.suppressedFailureServer = nil
-                self.cancelFailureProcess(incrementGeneration: true)
+    private func updateSettings(_ value: ProxySettings) {
+        let previous = self.settings
+        self.settings = value
+        let activeChanged = previous.activeServer != value.activeServer
+        let listChanged = previous.servers != value.servers
+        if activeChanged || listChanged || previous.enabled != value.enabled {
+            let expected = self.phase.expectedServer
+            if !(activeChanged && expected == value.activeServer && !listChanged && value.enabled) {
+                self.suppressedServer = nil
+                self.invalidate(suppressCurrent: false)
             }
         }
         self.reevaluate()
     }
 
-    private func updateConnectionStatus(_ status: ConnectionStatus) {
-        self.connectionStatus = status
-        switch status {
+    private func updateStatus(_ value: ConnectionStatus) {
+        self.status = value
+        switch value {
         case .online:
-            self.suppressedFailureServer = nil
-            self.cancelFailureProcess(incrementGeneration: true)
-        case let .connecting(_, proxyHasConnectionIssues):
-            if !proxyHasConnectionIssues {
-                self.suppressedFailureServer = nil
-                self.cancelFailureProcess(incrementGeneration: true)
+            self.suppressedServer = nil
+            self.invalidate(suppressCurrent: false)
+        case let .connecting(_, hasProxyIssues):
+            if !hasProxyIssues {
+                switch self.phase {
+                case .applying(_, _, _, _, _), .connecting(_, _, _, _, _):
+                    break
+                default:
+                    self.suppressedServer = nil
+                    self.invalidate(suppressCurrent: false)
+                }
             }
         case .waitingForNetwork, .updating:
-            self.suppressedFailureServer = nil
-            self.cancelFailureProcess(incrementGeneration: true)
+            // Interface changes are not proxy failures.
+            self.suppressedServer = nil
+            self.invalidate(suppressCurrent: false)
         }
         self.reevaluate()
     }
 
     private func reevaluate() {
-        guard NagramiXNetworkSettingsBridge.proxyAutoSwitchEnabled else {
-            self.cancelFailureProcess(incrementGeneration: true)
+        guard NagramiXNetworkSettingsBridge.proxyAutoSwitchEnabled,
+              self.settings.enabled,
+              let active = self.settings.activeServer else {
+            self.invalidate(suppressCurrent: false)
             return
         }
-        guard self.proxySettings.enabled, let activeServer = self.proxySettings.activeServer else {
-            self.cancelFailureProcess(incrementGeneration: true)
+        let servers = self.uniqueServers(self.settings.servers)
+        guard servers.count > 1 else {
+            self.invalidate(suppressCurrent: false)
             return
         }
-        let uniqueServers = self.uniqueServers(self.proxySettings.servers)
-        guard uniqueServers.count > 1 else {
-            self.cancelFailureProcess(incrementGeneration: false)
+        guard case let .connecting(_, hasIssues) = self.status, hasIssues,
+              self.suppressedServer != active,
+              case .idle = self.phase,
+              NagramiXProxyFailoverController.owner == nil || NagramiXProxyFailoverController.owner === self else {
             return
         }
-        guard case let .connecting(_, proxyHasConnectionIssues) = self.connectionStatus, proxyHasConnectionIssues else {
-            return
+        NagramiXProxyFailoverController.owner = self
+        self.generation &+= 1
+        let token = self.generation
+        self.phase = .waiting(origin: active, token: token)
+        self.schedule(after: Double(NagramiXNetworkSettingsBridge.proxyAutoSwitchTimeout), token: token) { [weak self] in
+            guard let self,
+                  case let .waiting(origin, phaseToken) = self.phase,
+                  phaseToken == token,
+                  self.settings.activeServer == origin,
+                  case let .connecting(_, stillFailing) = self.status,
+                  stillFailing else { return }
+            self.begin(origin: origin, servers: servers, token: token)
         }
-        guard self.suppressedFailureServer != activeServer else {
-            return
-        }
-        guard self.expectedActiveServer == nil else {
-            return
-        }
-        guard self.failureTimer == nil, self.probeDisposable == nil, self.candidateTimer == nil else {
-            return
-        }
-        guard NagramiXProxyFailoverController.failoverOwner == nil || NagramiXProxyFailoverController.failoverOwner === self else {
-            return
-        }
-        NagramiXProxyFailoverController.failoverOwner = self
-
-        let timeout = NagramiXNetworkSettingsBridge.proxyAutoSwitchTimeout
-        let generation = self.generation
-        let timer = SwiftSignalKit.Timer(timeout: Double(timeout), repeat: false, completion: { [weak self] in
-            guard let self, generation == self.generation else {
-                return
-            }
-            self.failureTimer = nil
-            guard case let .connecting(_, stillFailing) = self.connectionStatus, stillFailing, self.proxySettings.activeServer == activeServer else {
-                return
-            }
-            self.beginFailover(from: activeServer, servers: uniqueServers, generation: generation)
-        }, queue: self.queue)
-        self.failureTimer = timer
-        timer.start()
     }
 
-    private func beginFailover(from activeServer: ProxyServerSettings, servers: [ProxyServerSettings], generation: Int) {
-        guard let currentIndex = servers.firstIndex(of: activeServer) else {
-            self.suppressedFailureServer = activeServer
+    private func begin(origin: ProxyServerSettings, servers: [ProxyServerSettings], token: UInt64) {
+        guard token == self.generation, let index = servers.firstIndex(of: origin) else {
+            self.invalidate(suppressCurrent: true)
             return
         }
-        let after = Array(servers[(currentIndex + 1)...])
-        let before = currentIndex > 0 ? Array(servers[..<currentIndex]) : []
-        self.remainingCandidates = after + before
-        self.probeNextCandidate(generation: generation)
+        let candidates = (Array(servers[(index + 1)...]) + (index > 0 ? Array(servers[..<index]) : [])).filter { $0 != origin }
+        guard !candidates.isEmpty else {
+            self.invalidate(suppressCurrent: true)
+            return
+        }
+        self.check(origin: origin, candidates: candidates, index: 0, token: token)
     }
 
-    private func probeNextCandidate(generation: Int) {
-        guard generation == self.generation, let network = self.network else {
+    private func check(origin: ProxyServerSettings, candidates: [ProxyServerSettings], index: Int, token: UInt64) {
+        guard token == self.generation, let network = self.network else { return }
+        guard index < candidates.count else {
+            self.invalidate(suppressCurrent: true)
             return
         }
-        self.expectedActiveServer = nil
-        guard !self.remainingCandidates.isEmpty else {
-            self.suppressedFailureServer = self.proxySettings.activeServer
-            self.cancelFailureProcess(incrementGeneration: false)
-            return
-        }
-        let candidate = self.remainingCandidates.removeFirst()
+        let candidate = candidates[index]
+        self.phase = .checking(origin: origin, candidates: candidates, index: index, token: token)
         self.probeDisposable?.dispose()
-        let probeTimeout = SwiftSignalKit.Timer(timeout: 12.0, repeat: false, completion: { [weak self] in
-            guard let self, generation == self.generation else {
-                return
-            }
-            self.candidateTimer = nil
+        self.probeDisposable = nil
+        self.schedule(after: 12.0, token: token) { [weak self] in
+            guard let self else { return }
             self.probeDisposable?.dispose()
             self.probeDisposable = nil
-            self.probeNextCandidate(generation: generation)
-        }, queue: self.queue)
-        self.candidateTimer = probeTimeout
-        probeTimeout.start()
-        self.probeDisposable = MTProxyConnectivity.pingProxy(with: network.context, datacenterId: network.datacenterId, settings: candidate.mtProxySettings).start(next: { [weak self] value in
-            guard let self else {
-                return
-            }
-            self.queue.async {
-                guard generation == self.generation else {
-                    return
-                }
-                self.candidateTimer?.invalidate()
-                self.candidateTimer = nil
+            self.check(origin: origin, candidates: candidates, index: index + 1, token: token)
+        }
+        self.probeDisposable = MTProxyConnectivity.pingProxy(with: network.context, datacenterId: network.datacenterId, settings: candidate.mtProxySettings).start(next: { [weak self] result in
+            self?.queue.async {
+                guard let self, token == self.generation,
+                      case let .checking(_, _, phaseIndex, phaseToken) = self.phase,
+                      phaseIndex == index, phaseToken == token else { return }
+                self.cancelTimer()
                 self.probeDisposable?.dispose()
                 self.probeDisposable = nil
-                guard let status = value as? MTProxyConnectivityStatus, status.reachable else {
-                    self.probeNextCandidate(generation: generation)
+                guard let status = result as? MTProxyConnectivityStatus, status.reachable else {
+                    self.check(origin: origin, candidates: candidates, index: index + 1, token: token)
                     return
                 }
-                self.applyCandidate(candidate, generation: generation)
+                self.apply(origin: origin, candidates: candidates, index: index, candidate: candidate, token: token)
             }
         })
     }
 
-    private func applyCandidate(_ candidate: ProxyServerSettings, generation: Int) {
-        guard generation == self.generation, let accountManager = self.accountManager else {
-            return
-        }
-        self.expectedActiveServer = candidate
-        let _ = (updateProxySettingsInteractively(accountManager: accountManager, { current in
+    private func apply(origin: ProxyServerSettings, candidates: [ProxyServerSettings], index: Int, candidate: ProxyServerSettings, token: UInt64) {
+        guard token == self.generation, let accountManager = self.accountManager else { return }
+        self.phase = .applying(origin: origin, candidates: candidates, index: index, candidate: candidate, token: token)
+        self.applyDisposable?.dispose()
+        self.applyDisposable = (updateProxySettingsInteractively(accountManager: accountManager, { current in
             var current = current
             current.enabled = true
             current.activeServer = candidate
             return current
-        })
-        |> deliverOn(self.queue)).start(next: { [weak self] changed in
-            guard let self, generation == self.generation else {
+        }) |> deliverOn(self.queue)).start(next: { [weak self] changed in
+            guard let self, token == self.generation,
+                  case let .applying(_, _, phaseIndex, phaseCandidate, phaseToken) = self.phase,
+                  phaseIndex == index, phaseCandidate == candidate, phaseToken == token else { return }
+            self.applyDisposable = nil
+            if !changed && self.settings.activeServer != candidate {
+                self.check(origin: origin, candidates: candidates, index: index + 1, token: token)
                 return
             }
-            if !changed && self.proxySettings.activeServer != candidate {
-                self.expectedActiveServer = nil
-                self.probeNextCandidate(generation: generation)
-                return
+            self.phase = .connecting(origin: origin, candidates: candidates, index: index, candidate: candidate, token: token)
+            self.schedule(after: 12.0, token: token) { [weak self] in
+                guard let self else { return }
+                if case .online = self.status, self.settings.activeServer == candidate {
+                    self.invalidate(suppressCurrent: false)
+                } else {
+                    self.check(origin: origin, candidates: candidates, index: index + 1, token: token)
+                }
             }
-            let timer = SwiftSignalKit.Timer(timeout: 12.0, repeat: false, completion: { [weak self] in
-                guard let self, generation == self.generation else {
-                    return
-                }
-                self.candidateTimer = nil
-                if case .online = self.connectionStatus, self.proxySettings.activeServer == candidate {
-                    self.remainingCandidates.removeAll()
-                    return
-                }
-                self.probeNextCandidate(generation: generation)
-            }, queue: self.queue)
-            self.candidateTimer = timer
-            timer.start()
         })
+    }
+
+    private func schedule(after timeout: Double, token: UInt64, action: @escaping () -> Void) {
+        self.cancelTimer()
+        let timer = SwiftSignalKit.Timer(timeout: timeout, repeat: false, completion: { [weak self] in
+            guard let self, token == self.generation else { return }
+            self.timer = nil
+            action()
+        }, queue: self.queue)
+        self.timer = timer
+        timer.start()
+    }
+
+    private func cancelTimer() {
+        self.timer?.invalidate()
+        self.timer = nil
+    }
+
+    private func invalidate(suppressCurrent: Bool) {
+        let active = self.settings.activeServer
+        self.generation &+= 1
+        self.cancelTimer()
+        self.probeDisposable?.dispose()
+        self.probeDisposable = nil
+        self.applyDisposable?.dispose()
+        self.applyDisposable = nil
+        self.phase = .idle
+        self.suppressedServer = suppressCurrent ? active : nil
+        if NagramiXProxyFailoverController.owner === self {
+            NagramiXProxyFailoverController.owner = nil
+        }
     }
 
     private func uniqueServers(_ servers: [ProxyServerSettings]) -> [ProxyServerSettings] {
@@ -265,26 +283,5 @@ final class NagramiXProxyFailoverController {
             result.append(server)
         }
         return result
-    }
-
-    private func cancelFailureTimerOnly() {
-        self.failureTimer?.invalidate()
-        self.failureTimer = nil
-    }
-
-    private func cancelFailureProcess(incrementGeneration: Bool) {
-        if incrementGeneration {
-            self.generation &+= 1
-        }
-        self.cancelFailureTimerOnly()
-        self.candidateTimer?.invalidate()
-        self.candidateTimer = nil
-        self.probeDisposable?.dispose()
-        self.probeDisposable = nil
-        self.expectedActiveServer = nil
-        self.remainingCandidates.removeAll()
-        if NagramiXProxyFailoverController.failoverOwner === self {
-            NagramiXProxyFailoverController.failoverOwner = nil
-        }
     }
 }

@@ -23,6 +23,11 @@ private extension PresentationStrings {
 }
 
 public extension PresentationStrings {
+    func nagramiXDebugLocalized(_ english: String) -> String {
+        let key = "NagramiX.Debug." + english
+        let value = self.nagramiXLocalized(key)
+        return value == key ? english : value
+    }
     var nagramiXSettingsTitle: String { self.nagramiXLocalized("NagramiX.Settings.Title") }
     var nagramiXTabsHeader: String { self.nagramiXLocalized("NagramiX.Settings.Tabs.Header") }
     var nagramiXHideContactsTab: String { self.nagramiXLocalized("NagramiX.Settings.Tabs.HideContacts") }
@@ -41,6 +46,9 @@ public extension PresentationStrings {
     var nagramiXRestartAction: String { self.nagramiXLocalized("NagramiX.Restart.Action") }
     var nagramiXStoryConfirmationTitle: String { self.nagramiXLocalized("NagramiX.StoryConfirmation.Title") }
     var nagramiXStoryConfirmationText: String { self.nagramiXLocalized("NagramiX.StoryConfirmation.Text") }
+    func nagramiXStoryConfirmationText(owner: String) -> String {
+        return String(format: self.nagramiXStoryConfirmationText, owner)
+    }
     var nagramiXViewStoryAction: String { self.nagramiXLocalized("NagramiX.StoryConfirmation.Action") }
     var nagramiXIconMain: String { self.nagramiXLocalized("NagramiX.Icon.Main") }
     var nagramiXIconSunset: String { self.nagramiXLocalized("NagramiX.Icon.Sunset") }
@@ -68,6 +76,7 @@ public extension PresentationStrings {
     var nagramiXSeconds30: String { self.nagramiXLocalized("NagramiX.Time.30Seconds") }
     var nagramiXSeconds60: String { self.nagramiXLocalized("NagramiX.Time.60Seconds") }
     var nagramiXShowProxyButton: String { self.nagramiXLocalized("NagramiX.Interface.ShowProxyButton") }
+    var nagramiXShowProxySponsorChannel: String { self.nagramiXLocalized("NagramiX.Interface.ShowProxySponsorChannel") }
     var nagramiXEdit: String { self.nagramiXLocalized("NagramiX.Common.Edit") }
     var nagramiXSave: String { self.nagramiXLocalized("NagramiX.Common.Save") }
 }

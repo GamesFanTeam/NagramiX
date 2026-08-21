@@ -15,7 +15,7 @@
 "NagramiX.Restart.Text" = "NagramiX must be restarted to apply this change.";
 "NagramiX.Restart.Action" = "Restart";
 "NagramiX.StoryConfirmation.Title" = "View Story?";
-"NagramiX.StoryConfirmation.Text" = "The story will open only after confirmation.";
+"NagramiX.StoryConfirmation.Text" = "%@ will be able to see that you viewed the story.";
 "NagramiX.StoryConfirmation.Action" = "View";
 "NagramiX.Icon.Main" = "NagramiX";
 "NagramiX.Icon.Sunset" = "Sunset";
@@ -43,5 +43,6 @@
 "NagramiX.Time.30Seconds" = "30 seconds";
 "NagramiX.Time.60Seconds" = "60 seconds";
 "NagramiX.Interface.ShowProxyButton" = "Show Proxy Button";
+"NagramiX.Interface.ShowProxySponsorChannel" = "Show Proxy Sponsor Channel";
 "NagramiX.Common.Edit" = "Edit";
 "NagramiX.Common.Save" = "Save";
