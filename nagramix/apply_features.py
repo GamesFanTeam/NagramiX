@@ -1303,7 +1303,7 @@ def apply_features(source: Path) -> None:
                 return
             }
             self.orderedStorySubscriptions = NagramiXTabSettings.current.hideStories ? nil : (self.nagramiXLastOrderedStorySubscriptions ?? self.rawStorySubscriptions)
-            self.chatListDisplayNode.nagramiXRefreshSettings()
+            self.chatListDisplayNode.effectiveContainerNode.currentItemNode.nagramiXRefreshSettings()
             let transition: ContainedViewLayoutTransition = self.didAppear ? .animated(duration: 0.4, curve: .spring) : .immediate
             self.chatListDisplayNode.temporaryContentOffsetChangeTransition = transition
             self.requestLayout(transition: transition)
